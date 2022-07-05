@@ -10,11 +10,11 @@ Any feedback from users is welcome and you can write to me at hejarshahabi@gmail
 
 ## Quick tutorial on how to use GeoPatch 
 
-### 1- Installation :
+### 1- Installation 
 ```bash
 pip install GeoPatch
 ```
-### 2- Calling the Package:
+### 2- Calling the Package
 ```bash
 from GeoPatch import Generator
 ```
