@@ -1,4 +1,5 @@
-## *GeoPatch* is a package for generating patches from remote sensing data [![PyPI version](https://badge.fury.io/py/GeoPatch.svg)](https://pypi.org/project/geopatch/) [![Downloads](https://pepy.tech/badge/geopatch)](https://pepy.tech/project/geopatch) 
+## *GeoPatch* is a package for generating patches from remote sensing data
+[![PyPI version](https://badge.fury.io/py/GeoPatch.svg)](https://pypi.org/project/geopatch/) [![Downloads](https://pepy.tech/badge/geopatch)](https://pepy.tech/project/geopatch) 
 
 *GeoPatch* enables the user to read, process and export GeoTIFFs in various patch sizes. The module is built on the Rasterio library but is much more convenient when it comes to reading and exporting GeoTIFs patches for training deep learning models.
 Using this package user is able to feed satellite imagery and corresponding label data and exports patches in both Geotiff and Numpy array.
