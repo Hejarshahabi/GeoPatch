@@ -1,5 +1,5 @@
-## *GeoPatch* is a package for generating patches from remote sensing data
-[![PyPI version](https://badge.fury.io/py/GeoPatch.svg)](https://pypi.org/project/geopatch/) [![Downloads](https://pepy.tech/badge/geopatch)](https://pepy.tech/project/geopatch) 
+## *GeoPatch* is a package for generating patches from remote sensing data [![PyPI version](https://img.shields.io/badge/PyPi%20Package-1.0.3-green)](https://pypi.org/project/GeoPatch/) [![Downloads](https://static.pepy.tech/personalized-badge/geopatch?period=total&units=international_system&left_color=brightgreen&right_color=orange&left_text=Downloads)](https://pepy.tech/project/geopatch) [![Github](https://img.shields.io/badge/Github-GeoPatch-blue)](https://github.com/Hejarshahabi/GeoPatch) [![LinkedIn](https://img.shields.io/badge/LinkedIn-Hejar%20Shahabi-blue)](https://www.linkedin.com/in/hejarshahabi/) [![Twitter URL](https://img.shields.io/twitter/url?color=blue&label=Hejar%20Shahabi&style=social&url=https%3A%2F%2Ftwitter.com%2Fhejarshahabi)](https://twitter.com/hejarshahabi) 
+
 
 *GeoPatch* enables the user to read, process and export GeoTIFFs in various patch sizes. The module is built on the Rasterio library but is much more convenient when it comes to reading and exporting GeoTIFs patches for training deep learning models.
 Using this package user is able to feed satellite imagery and corresponding label data and exports patches in both Geotiff and Numpy array.
@@ -51,7 +51,4 @@ In "*folder_name*" the exact name of the folder that patches are located in shou
 ```bash
 patch.visualize(folder_name='npy',patches_to_show=2,band_num=1,
 fig_size=(10, 20),dpi=96)
-```
-
-
 ```
