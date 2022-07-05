@@ -6,7 +6,7 @@ Using this package user is able to feed satellite imagery and corresponding labe
 
 Any feedback from users is welcome and you can write to me at hejarshahabi@gmail.com in case of any contribution or suggestion.
 
-<img src="https://github.com/Hejarshahabi/GeoPatch/blob/main/Patch_logo.jpg?raw=true?raw=true" width="950" height="325">
+<img src="https://github.com/Hejarshahabi/GeoPatch/blob/main/Patch_logo.jpg?raw=true?raw=true" width="880" height="325">
 
 ## Quick tutorial on how to use GeoPatch 
 
