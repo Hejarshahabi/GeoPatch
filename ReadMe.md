@@ -1,11 +1,12 @@
-## *GeoPatch* is a package for generating patches from remote sensing data
-[![PyPI version](https://img.shields.io/badge/PyPi%20Package-1.0.3-green)](https://pypi.org/project/GeoPatch/) [![Downloads](https://static.pepy.tech/personalized-badge/geopatch?period=total&units=international_system&left_color=brightgreen&right_color=orange&left_text=Downloads)](https://pepy.tech/project/geopatch) [![Github](https://img.shields.io/badge/Github-GeoPatch-blue)](https://github.com/Hejarshahabi/GeoPatch) [![LinkedIn](https://img.shields.io/badge/LinkedIn-Hejar%20Shahabi-blue)](https://www.linkedin.com/in/hejarshahabi/) [![Twitter URL](https://img.shields.io/twitter/url?color=blue&label=Hejar%20Shahabi&style=social&url=https%3A%2F%2Ftwitter.com%2Fhejarshahabi)](https://twitter.com/hejarshahabi) 
+## *GeoPatch* is a package for generating patches from remote sensing data [![PyPI version](https://img.shields.io/badge/PyPi%20Package-1.0.3-green)](https://pypi.org/project/GeoPatch/) [![Downloads](https://static.pepy.tech/personalized-badge/geopatch?period=total&units=international_system&left_color=brightgreen&right_color=orange&left_text=Downloads)](https://pepy.tech/project/geopatch) [![Github](https://img.shields.io/badge/Github-GeoPatch-blue)](https://github.com/Hejarshahabi/GeoPatch) [![LinkedIn](https://img.shields.io/badge/LinkedIn-Hejar%20Shahabi-blue)](https://www.linkedin.com/in/hejarshahabi/) [![Twitter URL](https://img.shields.io/twitter/url?color=blue&label=Hejar%20Shahabi&style=social&url=https%3A%2F%2Ftwitter.com%2Fhejarshahabi)](https://twitter.com/hejarshahabi) 
 
 
 *GeoPatch* enables the user to read, process and export GeoTIFFs in various patch sizes. The module is built on the Rasterio library but is much more convenient when it comes to reading and exporting GeoTIFs patches for training deep learning models.
 Using this package user is able to feed satellite imagery and corresponding label data and exports patches in both Geotiff and Numpy array.
 
 Any feedback from users is welcome and you can write to me at hejarshahabi@gmail.com in case of any contribution or suggestion.
+
+<img src="https://github.com/Hejarshahabi/GeoPatch/blob/main/Patch_logo.jpg?raw=true?raw=true" width="950" height="325">
 
 ## Quick tutorial on how to use GeoPatch 
 
