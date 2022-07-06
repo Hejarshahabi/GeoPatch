@@ -45,7 +45,7 @@ Using this function image patches will be generated in Numpy format with data au
 ```bash
 patch.save_numpy(folder_name="npy", only_label=True, return_stacked=True, save_stack=True, V_flip=True, H_flip=True, Rotation=True)
 #to return numpy patches as a stack file:
-patch, label= patch.save_numpy
+patch, label= patch.save_numpy(folder_name="npy", only_label=True, return_stacked=True, save_stack=True, V_flip=True, H_flip=True, Rotation=True)
 ```
 ### 8- Patch visualization  
 Patches with their corresponding labels can be displayed using this line of code.
