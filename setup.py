@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-with open("ReadMe.txt", "r", encoding="utf-8") as ReadMe:
+with open("ReadMe.md", "r", encoding="utf-8") as ReadMe:
     long_description = ReadMe.read()
 classifiers = [
     'Development Status :: 5 - Production/Stable',
@@ -12,7 +12,7 @@ classifiers = [
 
 setup(
     name='GeoPatch',
-    version='1.0.5',
+    version='1.0.6',
     description='GeoPatch is a package for generating patches from remote sensing data',
     long_description=long_description,
     url='https://github.com/Hejarshahabi',
@@ -25,3 +25,4 @@ setup(
     packages=find_packages( ),
     install_requires=['numpy','pandas','matplotlib','sklearn','rasterio','tqdm']
 )
+
