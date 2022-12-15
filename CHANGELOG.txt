@@ -1,11 +1,16 @@
 Change Log 
 ==========
 
-1.0 (04/07/2020)
+1.0 (04/07/2022)
 ----------------
 - First Release
 
-1.1 (03/08/2020)
+1.1 (03/08/2022)
 ----------------
 - Issues regarding loading Numpy arrays are fixed 
 - Issues Random visualization of sample are fixed
+
+1.2 (15/12/2022)
+----------------
+- Issues regarding visualization fixed in limux environments
+- A function for generating Prediction patch is added
