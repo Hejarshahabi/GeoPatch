@@ -408,8 +408,8 @@ class TrainPatch:
         """
 
         print('image and label for the following patches will be displayed are: ')
-        patch_dir=sorted(glob.glob(os.path.join(os.getcwd(),folder_name, "patch/*"))
-        label_dir=sorted(glob.glob(os.path.join(os.getcwd(),folder_name, "label/*"))
+        patch_dir=sorted(glob.glob(os.path.join(os.getcwd(),folder_name, "patch/*")))
+        label_dir=sorted(glob.glob(os.path.join(os.getcwd(),folder_name, "label/*")))
   
         idx=np.random.randint(1, len(patch_dir), patches_to_show)
         if patch_dir[0][-3:]=="tif":
