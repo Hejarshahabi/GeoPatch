@@ -128,4 +128,4 @@ Using the following line of code prediction patches can be saved as GeoTIF forma
 
 
 ```bash
-Prediction.save_geotif('folder_name')
+Prediction.save_Geotif('folder_name')
