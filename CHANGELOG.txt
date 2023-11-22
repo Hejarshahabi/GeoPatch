@@ -10,7 +10,14 @@ Change Log
 - Issues regarding loading Numpy arrays are fixed 
 - Issues Random visualization of sample are fixed
 
-1.2 (15/12/2022)
+1.1.1 (15/12/2022)
 ----------------
-- Issues regarding visualization fixed in limux environments
-- A function for generating Prediction patch is added
+- Issues regarding visualization fixed in Linux environments
+- A function for generating a Prediction patch is added
+
+1.1.1 (22/11/2023)
+----------------
+- in the previous version while generating prediction patches the edge pixels were missed, but now this issue is fixed
+  and the entire image is patched
+- in some cases user could not install GDAL, therefore GDAL library is added into
+  the packages to be installed automatically
