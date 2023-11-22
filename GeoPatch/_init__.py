@@ -10,6 +10,7 @@ import numpy as np
 import rasterio as rs
 import glob
 import os 
+import math
 import tqdm
 import matplotlib.pyplot as plt
 
@@ -525,22 +526,17 @@ class PredictionPatch:
         generated based on given patch size and stride values.
         """
         self.readData()
-        x_dim=self.imgarr.shape[1]
-        y_dim=self.imgarr.shape[2]
-     
-        self.X=((x_dim-self.patch_size)//self.stride)*self.stride
-        self.Y=((y_dim-self.patch_size)//self.stride)*self.stride
-        self.covx=self.X+self.patch_size
-        self.covy=self.Y+self.patch_size
-        self.total_patches= ((x_dim-self.patch_size)//self.stride)*((y_dim-self.patch_size)//self.stride)
+        self.x_dim=self.imgarr.shape[1]
+        self.y_dim=self.imgarr.shape[2]
+
+        self.total_patches= math.ceil(self.x_dim/self.patch_size)*math.ceil(self.y_dim/self.patch_size)
        
-    
         print("       ")
         print("#######################################################################################")
-        print(f'The effective X-dimension of the input data for patch generation is from 0 to {self.covx}')
-        print(f'The effective Y-dimension of the input data for patch generation is from 0 to {self.covy}')
-        print(f'The number of total non-augmented patches that can be generated\n'
-              f'based on patch size ({self.patch_size}*{self.patch_size}) and stride ({self.stride}) is "{self.total_patches}"')
+        print(f'The effective X-dimension of the input data for patch generation is from 0 to {self.x_dim}')
+        print(f'The effective Y-dimension of the input data for patch generation is from 0 to {self.y_dim}')
+        print(f'The number of total non-augmented and non-overlapped patches that can be generated\n'
+              f'based on patch size ({self.patch_size}*{self.patch_size}) is "{self.total_patches}"')
         
         print("#######################################################################################")
         print("                                                                        ")
@@ -569,9 +565,16 @@ class PredictionPatch:
         with tqdm.tqdm(range(self.total_patches), desc="Patch Counter", unit=" Patch") as pbar:
             index=1
             patch_counter=0
-            for i in (range(0,self.X,self.stride)):
-                for j in (range(0,self.Y,self.stride)):
+            for i in (range(0,self.x_dim,self.stride)):
+                for j in (range(0,self.x_dim,self.stride)):
                     self.img_patch= self.imgarr[:,i:i+self.patch_size,j:j+self.patch_size]
+                    if self.img_patch.shape[1] or self.img_patch.shape[2]!= self.patch_size:
+                        temp=np.zeros((self.imgarr.shape[0], self.patch_size,self.patch_size), dtype='float')
+                        temp[:, :self.img_patch.shape[1],:self.img_patch.shape[2]]=self.img_patch
+                        self.img_patch=temp
+                    else:self.img_patch= self.imgarr[:,i:i+self.patch_size,j:j+self.patch_size]
+                        
+                        
                     self.x_cord,self.y_cord = (j*self.img.transform[0]+self.img.transform[2]),(self.img.transform[5]+i*self.img.transform[4])
                     transform= [self.img.transform[0],0,self.x_cord,0,self.img.transform[4],self.y_cord]
                             
