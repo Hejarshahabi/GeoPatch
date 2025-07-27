@@ -1,604 +1,630 @@
-
 # -*- coding: utf-8 -*-
 """
-Created on Dec 15 2022
+Created on Dec 15, 2022
+Updated on Jul 27, 2025
 
-@author: hejar Shahabi
-Email: hejarshahabi@gmail.com
+@author: Hejar Shahabi
+@email: hejarshahabi@gmail.com
+
+Optimized patch generation for satellite imagery with support for semantic segmentation,
+object detection, or both. Outputs GeoTIFF or NumPy patches with segmentation masks
+and/or YOLO-format bounding box annotations.
 """
+
 import numpy as np
 import rasterio as rs
 import glob
-import os 
+import os
 import math
 import tqdm
 import matplotlib.pyplot as plt
+from pathlib import Path
+from skimage.measure import label as skimage_label, regionprops
 
+class PatchBase:
+    """Base class for patch generation from satellite imagery."""
+    
+    def __init__(self, image, patch_size, stride, channel_first=True):
+        """Initialize patch generator with image and parameters.
 
-class TrainPatch:
-    """
-    Using the package, you will be able to turn 
-    satellite imagery into patches with various shape sizes
-    and apply data augmentation techniques such as flip and rotation.
-    
-    parameters:
-    -----------
-    image:              NumPy array, or string that
-                        shows path to satellite imagery with "tif" format
-    
-    label:              NumPy array, or string that
-                        shows path to label raster with "tif" format
-                
-    patch_size:         Integer
-                        moving window size to generate image patches
-                        From example: for a 128*128 patch just 128 needs to be passed
-                
-    stride:             Integer
-                        For small images or large patch size it is recommended to have
-                        a stride value less than patch size to generate more image patches
-                        and also having overly with consecutive patches. in case of no overly pass
-                        stride value equal or bigger than patch size.
-                    
-    channel_first:     Boolean 
-                       True if the first index is the number of image bands and False if it is the last index.
-    
-    """
+        Args:
+            image: NumPy array or string path to satellite imagery (.tif or .npy).
+            patch_size: Integer, size of square patches (e.g., 128 for 128x128).
+            stride: Integer, step size for sliding window (overlap if < patch_size).
+            channel_first: Boolean, True if channels are first dimension (default: True).
+        """
+        if image is None:
+            raise ValueError("Image must be provided.")
+        if not isinstance(patch_size, int) or patch_size <= 0:
+            raise ValueError("Patch size must be a positive integer.")
+        if not isinstance(stride, int) or stride <= 0:
+            raise ValueError("Stride must be a positive integer.")
+        
+        self.image = image
+        self.patch_size = patch_size
+        self.stride = stride
+        self.channel_first = channel_first
+        self.img = None
+        self.imgarr = None
+        self.shape = None
 
-    def __init__(self, image=None, label=None, patch_size=None, stride=None, channel_first=True):        
-        self.image=image
-        self.label=label
-        self.patch_size=patch_size
-        self.stride=stride
-        self.channel=channel_first
     def readData(self):
-        if type(self.image)==str and self.image[-3:]=="tif":
-            self.img=rs.open(self.image)
-            self.band=self.img.count 
-            self.row =self.img.width
-            self.col = self.img.height 
-            self.imgarr=self.img.read()
-            self.shape=self.imgarr.shape
-            self.inv=rs.open(self.label)
-            self.inv_row =self.inv.width
-            self.inv_col = self.inv.height 
-            self.inv=self.inv.read(1)
-            if self.channel==True:
-                self.imgarr=self.imgarr
+        """Read image data and return as NumPy array.
+
+        Returns:
+            NumPy array of image data.
+        """
+        if isinstance(self.image, str):
+            if self.image.endswith(".tif"):
+                if not os.path.exists(self.image):
+                    raise FileNotFoundError(f"Image file {self.image} not found.")
+                self.img = rs.open(self.image)
+                self.shape = (self.img.count, self.img.width, self.img.height)
+                self.imgarr = self.img.read()
+            elif self.image.endswith(".npy"):
+                if not os.path.exists(self.image):
+                    raise FileNotFoundError(f"Image file {self.image} not found.")
+                self.imgarr = np.load(self.image)
+                self.shape = self.imgarr.shape
             else:
-                self.imgarr=np.transpose(self.imgarr,(2,0,1))
-            return self.imgarr, self.inv
-           
-        elif type(self.image)==str and self.image[-3:]=="npy":
-            self.imgarr=np.load(self.image)
-            self.shape=self.imgarr.shape
-            self.inv=np.load(self.label)
-            if self.channel==True:
-                self.imgarr=self.imgarr
-            else:
-                self.imgarr=np.transpose(self.imgarr,(2,0,1))
-            return self.imgarr, self.inv
-            
+                raise ValueError("Image file must be .tif or .npy.")
         else:
-            self.shape=self.image.shape
-            if self.channel==True:
-                self.imgarr=self.image
-            else:
-                self.imgarr=np.transpose(self.image,(2,0,1))
-                
-            self.inv=self.label
-            return self.imgarr, self.inv, self.shape
-       
-    
+            self.imgarr = self.image
+            self.shape = self.image.shape
+
+        if not self.channel_first:
+            self.imgarr = np.transpose(self.imgarr, (1, 2, 0))
+        return self.imgarr
+
     def data_dimension(self):
-        """
-        To display input data dimension
-        """
+        """Display input data dimensions."""
         self.readData()
         print("############################################")
-        print(f' the shape of image is: {self.shape} ')
-        print(f' the shape of label is: {self.inv.shape} ')
+        print(f"The shape of image is: {self.shape}")
         print("############################################")
 
     def patch_info(self):
-        """
-        To isplay the number of orginal image patches can be 
-        generated based on given patch size and stride values.
-        """
+        """Display patch generation details."""
         self.readData()
-        x_dim=self.imgarr.shape[1]
-        y_dim=self.imgarr.shape[2]
-     
-        self.X=((x_dim-self.patch_size)//self.stride)*self.stride
-        self.Y=((y_dim-self.patch_size)//self.stride)*self.stride
-        self.covx=self.X+self.patch_size
-        self.covy=self.Y+self.patch_size
-        self.total_patches= ((x_dim-self.patch_size)//self.stride)*((y_dim-self.patch_size)//self.stride)
-       
-    
-        print("       ")
+        x_dim = self.imgarr.shape[1]
+        y_dim = self.imgarr.shape[2]
+        x_steps = (x_dim - self.patch_size) // self.stride + 1
+        y_steps = (y_dim - self.patch_size) // self.stride + 1
+        total_patches = x_steps * y_steps
+
         print("#######################################################################################")
-        print(f'The effective X-dimension of the input data for patch generation is from 0 to {self.covx}')
-        print(f'The effective Y-dimension of the input data for patch generation is from 0 to {self.covy}')
-        print(f'The number of total non-augmented patches that can be generated\n'
-              f'based on patch size ({self.patch_size}*{self.patch_size}) and stride ({self.stride}) is "{self.total_patches}"')
-        
+        print(f"The effective X-dimension for patch generation is from 0 to {x_dim}")
+        print(f"The effective Y-dimension for patch generation is from 0 to {y_dim}")
+        print(f"Total non-augmented patches with patch size {self.patch_size}x{self.patch_size} "
+              f"and stride {self.stride} is {total_patches}")
         print("#######################################################################################")
-        print("                                                                        ")
-        #print("#######################################################################################")
+        return total_patches, x_steps, y_steps
 
+    def _extract_patch(self, i, j):
+        """Extract a single patch from image."""
+        img_patch = self.imgarr[:, i:i+self.patch_size, j:j+self.patch_size]
+        if img_patch.shape[1] != self.patch_size or img_patch.shape[2] != self.patch_size:
+            temp = np.zeros((self.imgarr.shape[0], self.patch_size, self.patch_size), dtype=self.imgarr.dtype)
+            temp[:, :img_patch.shape[1], :img_patch.shape[2]] = img_patch
+            img_patch = temp
+        return img_patch
+
+class TrainPatch(PatchBase):
+    """Generate training patches for semantic segmentation and/or object detection."""
     
-    def save_Geotif(self, folder_name="tif", only_label=False):
-        #self.patch_info()
-        
+    def __init__(self, image, label, patch_size, stride, channel_first=True):
+        """Initialize with image, label, and patch parameters.
 
+        Args:
+            image: NumPy array or string path to satellite imagery (.tif or .npy).
+            label: NumPy array or string path to label raster (.tif or .npy).
+            patch_size: Integer, size of square patches.
+            stride: Integer, step size for sliding window.
+            channel_first: Boolean, True if channels are first dimension.
         """
-        
-        parameters:
-        -----------
-        folder_name:        String
-                            Passing the folder name as string like "tif" so a folder 
-                            with that name will be generated in the current working directory 
-                            to save Geotif image patches there in the sub-folders called "patch" and "label"
-        
-        only_label:         Boolean
-                            If True, only the patches will be exported that have labelled data.
+        super().__init__(image, patch_size, stride, channel_first)
+        if label is None:
+            raise ValueError("Label must be provided for training.")
+        self.label_data = label  # Renamed to avoid shadowing 'label' function
+        self.inv = None
 
-        """
-        
-        if not os.path.exists(folder_name+"/patch"):
-                                  os.makedirs(folder_name+"/patch")
-                                  os.makedirs(folder_name+"/label")
-                          
-        with tqdm.tqdm(range(self.total_patches), desc="Patch Counter", unit=" Patch") as pbar:
-            index=1
-            patch_counter=0
-            for i in (range(0,self.X,self.stride)):
-                for j in (range(0,self.Y,self.stride)):
-                    self.img_patch= self.imgarr[:,i:i+self.patch_size,j:j+self.patch_size]
-                    self.lbl_patch= self.inv[i:i+self.patch_size,j:j+self.patch_size]
-                    if only_label==True:
-                        if self.lbl_patch.any()<1:
-                            continue
-                        self.x_cord,self.y_cord = (j*self.img.transform[0]+self.img.transform[2]),(self.img.transform[5]+i*self.img.transform[4])
-                        transform= [self.img.transform[0],0,self.x_cord,0,self.img.transform[4],self.y_cord]
-                            
-                        with rs.open(folder_name+"/patch/"+str(index)+"_img.tif","w",driver='GTiff', count=self.band, dtype=self.imgarr.dtype,
-                                          width=self.patch_size, height=self.patch_size, transform=transform, crs=self.img.crs) as raschip:
-                                raschip.write(self.img_patch)
-                        with rs.open(folder_name+"/label/"+str(index)+"_lbl.tif","w",driver='GTiff', count=1, dtype=self.inv.dtype,
-                                          width=self.patch_size, height=self.patch_size, transform=transform, crs=self.img.crs) as lblchip:
-                                lblchip.write(self.lbl_patch,1)
-                                patch_counter+=1
-                        index+=1
-                        pbar.update(1)
-                            
-                    if only_label==False:
-                        
-                        self.x_cord,self.y_cord = (j*self.img.transform[0]+self.img.transform[2]),(self.img.transform[5]+i*self.img.transform[4])
-                        transform= [self.img.transform[0],0,self.x_cord,0,self.img.transform[4],self.y_cord]
-                            
-                        with rs.open(folder_name+"/patch/"+str(index)+"_img.tif","w",driver='GTiff', count=self.band, dtype=self.imgarr.dtype,
-                                          width=self.patch_size, height=self.patch_size, transform=transform, crs=self.img.crs) as raschip:
-                                raschip.write(self.img_patch)
-                        with rs.open(folder_name+"/label/"+str(index)+"_lbl.tif","w",driver='GTiff', count=1, dtype=self.inv.dtype,
-                                          width=self.patch_size, height=self.patch_size, transform=transform, crs=self.img.crs) as lblchip:
-                                lblchip.write(self.lbl_patch,1)
-                                patch_counter+=1
-                
-                        index+=1
-                        pbar.update(1)
-            total_patches=pbar.total
-            save_patches=patch_counter
-            percentage= int((save_patches/total_patches)*100)
-            print("#######################################################################################")
-            print(f'{save_patches} patches, which are %{percentage} of totall patches, are saved as ".tif" format in "{os.getcwd()}\{folder_name}"')
-            print("#######################################################################################")
-
-
-    def save_numpy(self, folder_name="npy", only_label=True, return_stacked=True, save_stack=True,  V_flip=True, H_flip=True, Rotation=True):
-        #self.patch_info()
-        #self.patch_info()
-        """
-        Using this function image patches will be generated in NumPy format with data augmentation options.
-        
-        parameters :
-        -----------
-        folder_name:        String
-                            Passing the folder name as string like "npy" so a folder 
-                            with that name will be generated in the current working directory 
-                            to save image patches in NumPy format there in the sub-folders called "patch" and "label"
-        
-        only_label:         Boolean
-                            If True, only the patches will be exported that have labelled data.
-                    
-        Return_stacked:     Boolean
-                            if True, the generated patches will be stacked to gather as a NumPy array
-                     
-        save_stacked :     Boolean 
-                            If True, the stacked arrays of patches and labels 
-                            will be save as NumPy array in "folder_name" directory
-                            
-        V_flip:             Boolean
-                            if True, Vertical flip will be applied on image patches/labels for data augmentation
-                                  
-        H_flip:             Boolean 
-                            if True, Horizontal flip will be applied on image patches/labels for data augmentation
-                            
-        Rotation:           Boolean 
-                            if True, 90-, 180- and 270-degree rotations will be applied on image patches/labels for data augmentation
-                        
-                        
-        
-        """
-
-        
-        if not os.path.exists(folder_name+"/patch"):
-                                  os.makedirs(folder_name+"/patch")
-                                  os.makedirs(folder_name+"/label")
-        num=[0]
-        if V_flip==True:
-            num.append("V")
-        if H_flip==True:
-            num.append("H")
-        if Rotation==True:
-            num.append("90")
-            num.append("180")
-            num.append("270")
-        x=[]
-        y=[]
-        if only_label==True:
-            with tqdm.tqdm(range(self.total_patches*len(num)), desc="Patch Counter", unit=" Patch") as pbar:
-                index=1
-                patch_counter=0
-    
-                for i in (range(0,self.X,self.stride)):
-                    for j in (range(0,self.Y,self.stride)):
-                        self.img_patch= self.imgarr[:,i:i+self.patch_size,j:j+self.patch_size]
-                        self.lbl_patch= self.inv[i:i+self.patch_size,j:j+self.patch_size]
-                        if self.lbl_patch.any()<1:
-                            continue
-                        self.img_patch=np.transpose(self.img_patch, (1,2,0))
-                        np.save(folder_name+"/patch/"+str(index)+"_img.npy", self.img_patch)
-                        np.save(folder_name+"/label/"+str(index)+"_lbl.npy", self.lbl_patch)
-                        patch_counter+=1
-                        pbar.update(1)
-                        if return_stacked==True:
-                            x.append(self.img_patch)
-                            y.append(self.lbl_patch)
-                        
-                        if V_flip==True:
-                            np.save(folder_name+"/patch/"+str(index)+"_img_V.npy", np.flip(self.img_patch, axis=0))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_V.npy", np.flip(self.lbl_patch, axis=0))
-                            patch_counter+=1
-                            pbar.update(1)
-                            if return_stacked==True:
-                                x.append(np.flip(self.img_patch, axis=0))
-                                y.append(np.flip(self.lbl_patch, axis=0))
-                            
-                        if H_flip==True:
-                            np.save(folder_name+"/patch/"+str(index)+"_img_H.npy", np.flip(self.img_patch, axis=1))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_H.npy",  np.flip(self.lbl_patch, axis=1))
-                            patch_counter+=1
-                            pbar.update(1)
-                            if return_stacked==True:
-                                x.append(np.flip(self.img_patch, axis=1))
-                                y.append(np.flip(self.lbl_patch, axis=1))
-                        if Rotation==True:
-                            np.save(folder_name+"/patch/"+str(index)+"_img_90.npy", np.rot90(self.img_patch,  k=1, axes=(0, 1)))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_90.npy", np.rot90(self.lbl_patch,  k=1, axes=(0, 1)))
-                            np.save(folder_name+"/patch/"+str(index)+"_img_180.npy", np.rot90(self.img_patch, k=2, axes=(0, 1)))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_180.npy", np.rot90(self.lbl_patch, k=2, axes=(0, 1)))
-                            np.save(folder_name+"/patch/"+str(index)+"_img_270.npy", np.rot90(self.img_patch, k=3, axes=(0, 1)))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_270.npy", np.rot90(self.lbl_patch, k=3, axes=(0, 1)))
-                            if return_stacked==True:
-                                x.append(np.rot90(self.img_patch,  k=1, axes=(0, 1)))
-                                y.append(np.rot90(self.lbl_patch,  k=1, axes=(0, 1)))
-                                x.append(np.rot90(self.img_patch,  k=2, axes=(0, 1)))
-                                y.append(np.rot90(self.lbl_patch,  k=2, axes=(0, 1)))
-                                x.append(np.rot90(self.img_patch,  k=3, axes=(0, 1)))
-                                y.append(np.rot90(self.lbl_patch,  k=3, axes=(0, 1)))
-
-                            
-                            
-                            patch_counter+=3
-                            pbar.update(3) 
-                        index+=1
-            total_patches=pbar.total
-            save_patches=patch_counter
-            percentage= int((save_patches/total_patches)*100)
-    
-            print("#######################################################################################")
-            print(f"{save_patches} patches, which are %{percentage} of total patches,\n"
-                  f'have the labelled data and are saved as ".npy" format in "{os.getcwd()}\{folder_name}"')
-    
-            print("#######################################################################################")
-        
-        if only_label==False:
-            with tqdm.tqdm(range(self.total_patches*len(num)), desc="Patch Counter", unit=" Patch") as pbar:
-                index=1
-                for i in (range(0,self.X,self.stride)):
-                    for j in (range(0,self.Y,self.stride)):
-                        self.img_patch= self.imgarr[:,i:i+self.patch_size,j:j+self.patch_size]
-                        self.lbl_patch= self.inv[i:i+self.patch_size,j:j+self.patch_size]
-                        self.img_patch=np.transpose(self.img_patch, (1,2,0))
-                        np.save(folder_name+"/patch/"+str(index)+"_img.npy", self.img_patch)
-                        np.save(folder_name+"/label/"+str(index)+"_lbl.npy", self.lbl_patch)
-                        pbar.update(1)
-                        if return_stacked==True:
-                            x.append(self.img_patch)
-                            y.append(self.lbl_patch)
-                        
-                        
-                        if V_flip==True:
-                            np.save(folder_name+"/patch/"+str(index)+"_img_V.npy", np.flip(self.img_patch, axis=0))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_V.npy", np.flip(self.lbl_patch, axis=0))
-                            pbar.update(1)
-                            if return_stacked==True:
-                                x.append(np.flip(self.img_patch, axis=0))
-                                y.append(np.flip(self.lbl_patch, axis=0))
-                        if H_flip==True:
-                            np.save(folder_name+"/patch/"+str(index)+"_img_H.npy", np.flip(self.img_patch, axis=1))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_H.npy",  np.flip(self.lbl_patch, axis=1))
-                            if return_stacked==True:
-                                x.append(np.flip(self.img_patch, axis=1))
-                                y.append(np.flip(self.lbl_patch, axis=1))
-                            pbar.update(1)
-                        if Rotation==True:
-                            np.save(folder_name+"/patch/"+str(index)+"_img_90.npy", np.rot90(self.img_patch,  k=1, axes=(0, 1)))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_90.npy", np.rot90(self.lbl_patch,  k=1, axes=(0, 1)))
-                            np.save(folder_name+"/patch/"+str(index)+"_img_180.npy", np.rot90(self.img_patch, k=2, axes=(0, 1)))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_180.npy", np.rot90(self.lbl_patch, k=2, axes=(0, 1)))
-                            np.save(folder_name+"/patch/"+str(index)+"_img_270.npy", np.rot90(self.img_patch, k=3, axes=(0, 1)))
-                            np.save(folder_name+"/label/"+str(index)+"_lbl_270.npy", np.rot90(self.lbl_patch, k=3, axes=(0, 1)))
-                            pbar.update(3)
-                            if return_stacked==True:
-                                x.append(np.rot90(self.img_patch,  k=1, axes=(0, 1)))
-                                y.append(np.rot90(self.lbl_patch,  k=1, axes=(0, 1)))
-                                x.append(np.rot90(self.img_patch,  k=2, axes=(0, 1)))
-                                y.append(np.rot90(self.lbl_patch,  k=2, axes=(0, 1)))
-                                x.append(np.rot90(self.img_patch,  k=3, axes=(0, 1)))
-                                y.append(np.rot90(self.lbl_patch,  k=3, axes=(0, 1)))
-                        index+=1
-                       
-                print("#######################################################################################")
-                print(f'{pbar.total} patches are saved as ".npy" format in "{os.getcwd()}\{folder_name}"')
-                print("#######################################################################################")
-        if return_stacked==True:
-            self.patch_stacked=np.array(x, dtype="float32") 
-            self.label_stacked=np.array(y, dtype="int")
-            print("  ")
-            print("#######################################################################################")
-            print (f'The shape of stacked patches and labels are: {self.patch_stacked.shape, self.label_stacked.shape}' )
-            print("#######################################################################################")
-        if save_stack==True:
-            print("   ")
-            print("#######################################################################################")
-            np.save(folder_name+"/Patch_stacked_"+str(self.patch_size)+".npy", self.patch_stacked)
-            np.save(folder_name+"/label_stacked_"+str(self.patch_size)+".npy", self.label_stacked)
-            print (f'The shape of stacked patches and labels are: {self.patch_stacked.shape, self.label_stacked.shape}' )
-            print(f' Stacked patches and labels are saved as ".npy" format in: \n'
-                  f'"{os.getcwd()}\{folder_name}"')
-            print("#######################################################################################")
-
-            
-        if return_stacked==True:
-            return self.patch_stacked, self.label_stacked
-        
-    def visualize(self,folder_name="npy",patches_to_show=1, band_num=1, fig_size=(10,20), dpi=96):
-        """
-        Using this function generated patches can be displayed
-        
-        parameters:
-        -----------
-        folder_name:        String
-                            The folder name that passed for saving patches should be passed here 
-                            to retrieve patches and display. 
-        
-        patches_to_show:    Integer
-                            Number of random patches to display.
-                            
-        band_num:           Integer
-                            the image band to be displayed.
-                            to display the last band number just pass 0 and for the first band 1.
-                            
-        figsize:            Tuple 
-                            plotting size for patches, the default is (10,20).
-                            
-        dpi:                Integer
-                            Dots per inches (dpi) to determine the size of the figure in inches, the default value is 96.
-        """
-
-        print('image and label for the following patches will be displayed are: ')
-        patch_dir=sorted(glob.glob(os.path.join(os.getcwd(),folder_name, "patch/*")))
-        label_dir=sorted(glob.glob(os.path.join(os.getcwd(),folder_name, "label/*")))
-  
-        idx=np.random.randint(1, len(patch_dir), patches_to_show)
-        if patch_dir[0][-3:]=="tif":
-            fig,ax= plt.subplots(len(idx),2, figsize=fig_size, dpi=dpi)
-            for i in range(len(idx)):
-                file=patch_dir[idx[i]]
-                print(file)
-                file_=label_dir[idx[i]]
-                print(file_)
-                img=rs.open(file)
-                img=img.read()
-                lbl=rs.open(file_)
-                lbl=lbl.read(1)
-                if patches_to_show<2:
-                    ax[i].imshow(img[band_num,:,:])
-                    ax[i+1].imshow(lbl)
-                else:
-                    ax[i,0].imshow(img[band_num,:,:])
-                    ax[i,1].imshow(lbl)
-                    
-        if patch_dir[0][-3:]=="npy":
-            fig,ax= plt.subplots(len(idx),2, figsize=fig_size, dpi=dpi)
-            for i in range(len(idx)):
-                file=patch_dir[idx[i]]
-                print(file)
-                file_=label_dir[idx[i]]
-                print(file_)
-                img=np.load(file)
-                lbl=np.load(file_)
-                if patches_to_show<2:
-                    ax[i].imshow(img[:,:,band_num])
-                    ax[i+1].imshow(lbl)
-                else:
-                    ax[i,0].imshow(img[:,:,band_num])
-                    ax[i,1].imshow(lbl)
-       
-                
-class PredictionPatch:
-    """
-    Using the package, you will be able to turn 
-    satellite imagery into patches with various shape sizes.
-    
-    parameters:
-    -----------
-    image:              NumPy array, or string that
-                        shows path to satellite imagery with "tif" format
-                
-    patch_size:         Integer
-                        moving window size to generate image patches
-                        From example: for a 128*128 patch just 128 needs to be passed
-                
-    stride:             Integer
-                        For small images or large patch size it is recommended to have
-                        a stride value less than patch size to generate more image patches
-                        and also having overly with consecutive patches. in case of no overly pass
-                        stride value equal or bigger than patch size.
-                    
-    channel_first:     Boolean 
-                       True if the first index is the number of image bands and False if it is the last index.
-    
-    """
-
-    def __init__(self, image=None, patch_size=None, stride=None, channel_first=True):        
-        self.image=image
-        self.patch_size=patch_size
-        self.stride=stride
-        self.channel=channel_first
     def readData(self):
-        if type(self.image)==str and self.image[-3:]=="tif":
-            self.img=rs.open(self.image)
-            self.band=self.img.count 
-            self.row =self.img.width
-            self.col = self.img.height 
-            self.imgarr=self.img.read()
-            self.shape=self.imgarr.shape
-            if self.channel==True:
-                self.imgarr=self.imgarr
-            else:
-                self.imgarr=np.transpose(self.imgarr,(2,0,1))
-            return self.imgarr
-           
-        elif type(self.image)==str and self.image[-3:]=="npy":
-            self.imgarr=np.load(self.image)
-            self.shape=self.imgarr.shape
-            if self.channel==True:
-                self.imgarr=self.imgarr
-            else:
-                self.imgarr=np.transpose(self.imgarr,(2,0,1))
-            return self.imgarr
-            
-        else:
-            self.shape=self.image.shape
-            if self.channel==True:
-                self.imgarr=self.image
-            else:
-                self.imgarr=np.transpose(self.image,(2,0,1))
-                
-            return self.imgarr, self.shape
-       
-    
-    def data_dimension(self):
-        """
-        To display input data dimension
-        """
-        self.readData()
-        print("############################################")
-        print(f' the shape of image is: {self.shape} ')
-        print("############################################")
+        """Read image and label data, validate dimensions.
 
-    def patch_info(self):
+        Returns:
+            Tuple of (image array, label array).
         """
-        To display the number of orginal image patches can be 
-        generated based on given patch size and stride values.
-        """
-        self.readData()
-        self.x_dim=self.imgarr.shape[1]
-        self.y_dim=self.imgarr.shape[2]
-
-        self.total_patches= math.ceil(self.x_dim/self.patch_size)*math.ceil(self.y_dim/self.patch_size)
-       
-        print("       ")
-        print("#######################################################################################")
-        print(f'The effective X-dimension of the input data for patch generation is from 0 to {self.x_dim}')
-        print(f'The effective Y-dimension of the input data for patch generation is from 0 to {self.y_dim}')
-        print(f'The number of total non-augmented and non-overlapped patches that can be generated\n'
-              f'based on patch size ({self.patch_size}*{self.patch_size}) is "{self.total_patches}"')
+        self.imgarr = super().readData()
         
-        print("#######################################################################################")
-        print("                                                                        ")
-        #print("#######################################################################################")
+        if isinstance(self.label_data, str):
+            if self.label_data.endswith(".tif"):
+                if not os.path.exists(self.label_data):
+                    raise FileNotFoundError(f"Label file {self.label_data} not found.")
+                self.inv = rs.open(self.label_data).read(1)
+            elif self.label_data.endswith(".npy"):
+                if not os.path.exists(self.label_data):
+                    raise FileNotFoundError(f"Label file {self.label_data} not found.")
+                self.inv = np.load(self.label_data)
+            else:
+                raise ValueError("Label file must be .tif or .npy.")
+        else:
+            self.inv = self.label_data
 
+        if self.imgarr.shape[1:] != self.inv.shape:
+            raise ValueError(f"Image {self.imgarr.shape[1:]} and label {self.inv.shape} dimensions must match.")
+        
+        return self.imgarr, self.inv
+
+    def data_dimension(self):
+        """Display image and label dimensions."""
+        self.readData()
+        print("############################################")
+        print(f"The shape of image is: {self.shape}")
+        print(f"The shape of label is: {self.inv.shape}")
+        print("############################################")
+
+    def _extract_patch(self, i, j):
+        """Extract a single patch from image and label."""
+        img_patch = super()._extract_patch(i, j)
+        lbl_patch = self.inv[i:i+self.patch_size, j:j+self.patch_size]
+        if lbl_patch.shape[0] != self.patch_size or lbl_patch.shape[1] != self.patch_size:
+            temp = np.zeros((self.patch_size, self.patch_size), dtype=self.inv.dtype)
+            temp[:lbl_patch.shape[0], :lbl_patch.shape[1]] = lbl_patch
+            lbl_patch = temp
+        return img_patch, lbl_patch
+
+    def _generate_bounding_boxes(self, lbl_patch):
+        """Generate YOLO-format bounding box annotations from label patch.
+
+        Args:
+            lbl_patch: NumPy array, label patch with class IDs.
+
+        Returns:
+            List of tuples (class_id, x_center, y_center, width, height) normalized to [0,1].
+        """
+        bboxes = []
+        labeled = skimage_label(lbl_patch > 0)  # Use explicit skimage_label to avoid shadowing
+        for region in regionprops(labeled, intensity_image=lbl_patch):
+            class_id = int(np.max(lbl_patch[region.coords[:, 0], region.coords[:, 1]])) - 1  # YOLO classes are 0-based
+            if class_id < 0:
+                continue
+            min_row, min_col, max_row, max_col = region.bbox
+            x_center = (min_col + max_col) / 2 / self.patch_size
+            y_center = (min_row + max_row) / 2 / self.patch_size
+            width = (max_col - min_col) / self.patch_size
+            height = (max_row - min_row) / self.patch_size
+            bboxes.append((class_id, x_center, y_center, width, height))
+        return bboxes
+
+    def _save_bounding_boxes(self, bboxes, filepath):
+        """Save bounding box annotations in YOLO format.
+
+        Args:
+            bboxes: List of tuples (class_id, x_center, y_center, width, height).
+            filepath: String, path to save .txt file.
+        """
+        with open(filepath, 'w') as f:
+            for bbox in bboxes:
+                f.write(f"{bbox[0]} {bbox[1]:.6f} {bbox[2]:.6f} {bbox[3]:.6f} {bbox[4]:.6f}\n")
+
+    def _apply_segmentation_augmentation(self, img_patch, lbl_patch, aug):
+        """Apply augmentation to image and label patches for segmentation.
+
+        Args:
+            img_patch: NumPy array, image patch (channel-last, height, width, channels).
+            lbl_patch: NumPy array, label patch (height, width).
+            aug: String, augmentation type ("V", "H", "90", "180", "270").
+
+        Returns:
+            Tuple of (augmented image, augmented label).
+        """
+        if aug == "V":
+            aug_img = np.flip(img_patch, axis=0)
+            aug_lbl = np.flip(lbl_patch, axis=0)
+        elif aug == "H":
+            aug_img = np.flip(img_patch, axis=1)
+            aug_lbl = np.flip(lbl_patch, axis=1)
+        elif aug in ["90", "180", "270"]:
+            k = {"90": 1, "180": 2, "270": 3}[aug]
+            aug_img = np.rot90(img_patch, k, axes=(0, 1))
+            aug_lbl = np.rot90(lbl_patch, k, axes=(0, 1))
+        else:
+            aug_img, aug_lbl = img_patch, lbl_patch
+        return aug_img, aug_lbl
+
+    def _apply_detection_augmentation(self, img_patch, lbl_patch, aug):
+        """Apply augmentation to image, label, and bounding boxes for detection.
+
+        Args:
+            img_patch: NumPy array, image patch (channel-last, height, width, channels).
+            lbl_patch: NumPy array, label patch (height, width).
+            aug: String, augmentation type ("V", "H", "90", "180", "270").
+
+        Returns:
+            Tuple of (augmented image, augmented label, augmented bboxes).
+        """
+        aug_bboxes = []
+        if aug == "V":
+            aug_img = np.flip(img_patch, axis=0)
+            aug_lbl = np.flip(lbl_patch, axis=0)
+            aug_bboxes = [(b[0], b[1], 1 - b[2], b[3], b[4]) for b in self._generate_bounding_boxes(lbl_patch)]
+        elif aug == "H":
+            aug_img = np.flip(img_patch, axis=1)
+            aug_lbl = np.flip(lbl_patch, axis=1)
+            aug_bboxes = [(b[0], 1 - b[1], b[2], b[3], b[4]) for b in self._generate_bounding_boxes(lbl_patch)]
+        elif aug in ["90", "180", "270"]:
+            k = {"90": 1, "180": 2, "270": 3}[aug]
+            aug_img = np.rot90(img_patch, k, axes=(0, 1))
+            aug_lbl = np.rot90(lbl_patch, k, axes=(0, 1))
+            orig_bboxes = self._generate_bounding_boxes(lbl_patch)
+            for b in orig_bboxes:
+                class_id, x_c, y_c, w, h = b
+                if aug == "90":
+                    x_new, y_new = y_c, 1 - x_c
+                    w_new, h_new = h, w
+                elif aug == "180":
+                    x_new, y_new = 1 - x_c, 1 - y_c
+                    w_new, h_new = w, h
+                elif aug == "270":
+                    x_new, y_new = 1 - y_c, x_c
+                    w_new, h_new = h, w
+                aug_bboxes.append((class_id, x_new, y_new, w_new, h_new))
+        else:
+            aug_img, aug_lbl = img_patch, lbl_patch
+            aug_bboxes = self._generate_bounding_boxes(lbl_patch)
+        return aug_img, aug_lbl, aug_bboxes
+
+    def generate_segmentation(self, format="npy", folder_name="seg_data", only_label=True,
+                             return_stacked=True, save_stack=True, V_flip=True, H_flip=True, Rotation=True):
+        """Generate patches for semantic segmentation.
+
+        Args:
+            format: String, output format ("tif" for GeoTIFF, "npy" for NumPy).
+            folder_name: String, directory to save patches (subfolders: patch, label).
+            only_label: Boolean, save only patches with non-zero labels if True.
+            return_stacked: Boolean, return stacked arrays if True.
+            save_stack: Boolean, save stacked arrays to disk if True.
+            V_flip: Boolean, apply vertical flip augmentation (only for NumPy output).
+            H_flip: Boolean, apply horizontal flip augmentation (only for NumPy output).
+            Rotation: Boolean, apply 90/180/270-degree rotation augmentation (only for NumPy output).
+        """
+        self.readData()
+        total_patches, x_steps, y_steps = self.patch_info()
+        os.makedirs(f"{folder_name}/patch", exist_ok=True)
+        os.makedirs(f"{folder_name}/label", exist_ok=True)
+
+        # Define augmentations only for NumPy output
+        augmentations = [0]
+        if format == "npy" and V_flip:
+            augmentations.append("V")
+        if format == "npy" and H_flip:
+            augmentations.append("H")
+        if format == "npy" and Rotation:
+            augmentations.extend(["90", "180", "270"])
+
+        patch_counter = 0
+        x, y = [], []
+        valid_patches = total_patches if not only_label else sum(
+            1 for i in range(0, x_steps * self.stride, self.stride)
+            for j in range(0, y_steps * self.stride, self.stride)
+            if self.inv[i:i+self.patch_size, j:j+self.patch_size].any()
+        )
+
+        with tqdm.tqdm(total=valid_patches * len(augmentations), desc="Patch Counter", unit="Patch") as pbar:
+            index = 1
+            for i in range(0, x_steps * self.stride, self.stride):
+                for j in range(0, y_steps * self.stride, self.stride):
+                    img_patch, lbl_patch = self._extract_patch(i, j)
+                    if only_label and not lbl_patch.any():
+                        continue
+
+                    # Convert to channel-last for augmentation and NumPy saving
+                    img_patch_save = np.transpose(img_patch, (1, 2, 0))  # (height, width, channels)
+
+                    if format == "tif":
+                        x_cord = j * self.img.transform[0] + self.img.transform[2]
+                        y_cord = self.img.transform[5] + i * self.img.transform[4]
+                        transform = [self.img.transform[0], 0, x_cord, 0, self.img.transform[4], y_cord]
+                        with rs.open(
+                            f"{folder_name}/patch/{index}_img.tif", "w", driver="GTiff",
+                            count=self.imgarr.shape[0], dtype=self.imgarr.dtype,
+                            width=self.patch_size, height=self.patch_size, transform=transform, crs=self.img.crs
+                        ) as raschip:
+                            raschip.write(np.transpose(img_patch_save, (2, 0, 1)))  # Back to channel-first
+                        with rs.open(
+                            f"{folder_name}/label/{index}_lbl.tif", "w", driver="GTiff",
+                            count=1, dtype=self.inv.dtype, width=self.patch_size, height=self.patch_size,
+                            transform=transform, crs=self.img.crs
+                        ) as lblchip:
+                            lblchip.write(lbl_patch, 1)
+                    else:
+                        np.save(f"{folder_name}/patch/{index}_img.npy", img_patch_save)
+                        np.save(f"{folder_name}/label/{index}_lbl.npy", lbl_patch)
+                    patch_counter += 1
+                    if return_stacked:
+                        x.append(img_patch_save)
+                        y.append(lbl_patch)
+                    pbar.update(1)
+
+                    # Apply augmentations only for NumPy output
+                    if format == "npy":
+                        for aug in augmentations[1:]:
+                            aug_img, aug_lbl = self._apply_segmentation_augmentation(img_patch_save, lbl_patch, aug)
+                            np.save(f"{folder_name}/patch/{index}_img_{aug}.npy", aug_img)
+                            np.save(f"{folder_name}/label/{index}_lbl_{aug}.npy", aug_lbl)
+                            patch_counter += 1
+                            if return_stacked:
+                                x.append(aug_img)
+                                y.append(aug_lbl)
+                            pbar.update(1)
+                    index += 1
+
+        percentage = int((patch_counter / (total_patches * len(augmentations))) * 100)
+        print(f"{patch_counter} patches ({percentage}% of total) saved as .{format} in {os.getcwd()}\\{folder_name}")
+
+        if return_stacked:
+            patch_stacked = np.array(x, dtype="float32")
+            label_stacked = np.array(y, dtype="int")
+            if save_stack:
+                np.save(f"{folder_name}/Patch_stacked_{self.patch_size}.npy", patch_stacked)
+                np.save(f"{folder_name}/label_stacked_{self.patch_size}.npy", label_stacked)
+                print(f"Stacked patches and labels saved with shapes: {patch_stacked.shape, label_stacked.shape}")
+            return patch_stacked, label_stacked
+
+    def generate_detection(self, format="npy", folder_name="det_data", only_label=True,
+                          return_stacked=True, save_stack=True, V_flip=True, H_flip=True,
+                          Rotation=True, segmentation=True):
+        """Generate patches for object detection with optional segmentation masks.
+
+        Args:
+            format: String, output format ("tif" for GeoTIFF, "npy" for NumPy).
+            folder_name: String, directory to save patches (subfolders: patch, bbox, label if segmentation).
+            only_label: Boolean, save only patches with non-zero labels if True.
+            return_stacked: Boolean, return stacked arrays if True.
+            save_stack: Boolean, save stacked arrays to disk if True.
+            V_flip: Boolean, apply vertical flip augmentation (only for NumPy output).
+            H_flip: Boolean, apply horizontal flip augmentation (only for NumPy output).
+            Rotation: Boolean, apply 90/180/270-degree rotation augmentation (only for NumPy output).
+            segmentation: Boolean, generate segmentation masks if True.
+        """
+        self.readData()
+        total_patches, x_steps, y_steps = self.patch_info()
+        os.makedirs(f"{folder_name}/patch", exist_ok=True)
+        os.makedirs(f"{folder_name}/bbox", exist_ok=True)
+        if segmentation:
+            os.makedirs(f"{folder_name}/label", exist_ok=True)
+
+        # Define augmentations only for NumPy output
+        augmentations = [0]
+        if format == "npy" and V_flip:
+            augmentations.append("V")
+        if format == "npy" and H_flip:
+            augmentations.append("H")
+        if format == "npy" and Rotation:
+            augmentations.extend(["90", "180", "270"])
+
+        patch_counter = 0
+        x, y = [], []
+        valid_patches = total_patches if not only_label else sum(
+            1 for i in range(0, x_steps * self.stride, self.stride)
+            for j in range(0, y_steps * self.stride, self.stride)
+            if self.inv[i:i+self.patch_size, j:j+self.patch_size].any()
+        )
+
+        with tqdm.tqdm(total=valid_patches * len(augmentations), desc="Patch Counter", unit="Patch") as pbar:
+            index = 1
+            for i in range(0, x_steps * self.stride, self.stride):
+                for j in range(0, y_steps * self.stride, self.stride):
+                    img_patch, lbl_patch = self._extract_patch(i, j)
+                    if only_label and not lbl_patch.any():
+                        continue
+
+                    img_patch_save = np.transpose(img_patch, (1, 2, 0))  # Channel-last for augmentation
+                    bboxes = self._generate_bounding_boxes(lbl_patch)
+                    if format == "tif":
+                        x_cord = j * self.img.transform[0] + self.img.transform[2]
+                        y_cord = self.img.transform[5] + i * self.img.transform[4]
+                        transform = [self.img.transform[0], 0, x_cord, 0, self.img.transform[4], y_cord]
+                        with rs.open(
+                            f"{folder_name}/patch/{index}_img.tif", "w", driver="GTiff",
+                            count=self.imgarr.shape[0], dtype=self.imgarr.dtype,
+                            width=self.patch_size, height=self.patch_size, transform=transform, crs=self.img.crs
+                        ) as raschip:
+                            raschip.write(np.transpose(img_patch_save, (2, 0, 1)))
+                        if segmentation:
+                            with rs.open(
+                                f"{folder_name}/label/{index}_lbl.tif", "w", driver="GTiff",
+                                count=1, dtype=self.inv.dtype, width=self.patch_size, height=self.patch_size,
+                                transform=transform, crs=self.img.crs
+                            ) as lblchip:
+                                lblchip.write(lbl_patch, 1)
+                    else:
+                        np.save(f"{folder_name}/patch/{index}_img.npy", img_patch_save)
+                        if segmentation:
+                            np.save(f"{folder_name}/label/{index}_lbl.npy", lbl_patch)
+                    self._save_bounding_boxes(bboxes, f"{folder_name}/bbox/{index}_bbox.txt")
+                    patch_counter += 1
+                    if return_stacked:
+                        x.append(img_patch_save)
+                        if segmentation:
+                            y.append(lbl_patch)
+                    pbar.update(1)
+
+                    # Apply augmentations only for NumPy output
+                    if format == "npy":
+                        for aug in augmentations[1:]:
+                            aug_img, aug_lbl, aug_bboxes = self._apply_detection_augmentation(img_patch_save, lbl_patch, aug)
+                            np.save(f"{folder_name}/patch/{index}_img_{aug}.npy", aug_img)
+                            if segmentation:
+                                np.save(f"{folder_name}/label/{index}_lbl_{aug}.npy", aug_lbl)
+                            self._save_bounding_boxes(aug_bboxes, f"{folder_name}/bbox/{index}_bbox_{aug}.txt")
+                            patch_counter += 1
+                            if return_stacked:
+                                x.append(aug_img)
+                                if segmentation:
+                                    y.append(aug_lbl)
+                            pbar.update(1)
+                    index += 1
+
+        percentage = int((patch_counter / (total_patches * len(augmentations))) * 100)
+        print(f"{patch_counter} patches ({percentage}% of total) saved as .{format} in {os.getcwd()}\\{folder_name}")
+
+        if return_stacked:
+            patch_stacked = np.array(x, dtype="float32")
+            label_stacked = np.array(y, dtype="int") if segmentation and y else None
+            if save_stack:
+                np.save(f"{folder_name}/Patch_stacked_{self.patch_size}.npy", patch_stacked)
+                if segmentation and label_stacked is not None:
+                    np.save(f"{folder_name}/label_stacked_{self.patch_size}.npy", label_stacked)
+                    print(f"Stacked patches and labels saved with shapes: {patch_stacked.shape, label_stacked.shape}")
+                else:
+                    print(f"Stacked patches saved with shape: {patch_stacked.shape}")
+            return patch_stacked, label_stacked if segmentation else patch_stacked
+
+    def visualize(self, folder_name="seg_data", patches_to_show=1, band_num=1, fig_size=(10, 20), dpi=96, show_bboxes=False):
+        """Visualize random patches with optional bounding boxes.
+
+        Args:
+            folder_name: String, directory containing saved patches.
+            patches_to_show: Integer, number of patches to display.
+            band_num: Integer, image band to display (1-based; 0 for last band).
+            fig_size: Tuple, figure size for plotting.
+            dpi: Integer, dots per inch for figure resolution.
+            show_bboxes: Boolean, overlay bounding boxes if True.
+        """
+        patch_dir = sorted(glob.glob(os.path.join(os.getcwd(), folder_name, "patch/*")))
+        label_dir = sorted(glob.glob(os.path.join(os.getcwd(), folder_name, "label/*")))
+        bbox_dir = sorted(glob.glob(os.path.join(os.getcwd(), folder_name, "bbox/*"))) if show_bboxes else []
+        if not patch_dir:
+            raise ValueError(f"No patches found in {folder_name}.")
+        if label_dir and len(patch_dir) != len(label_dir):
+            raise ValueError(f"Mismatched patch/label counts in {folder_name}.")
+        if show_bboxes and len(patch_dir) != len(bbox_dir):
+            raise ValueError(f"Mismatched patch/bbox counts in {folder_name}.")
+        
+        patches_to_show = min(patches_to_show, len(patch_dir))
+        idx = np.random.choice(len(patch_dir), patches_to_show, replace=False)
+        print("Displaying patches:")
+        
+        fig, ax = plt.subplots(patches_to_show, 2 if label_dir else 1, figsize=fig_size, dpi=dpi)
+        if patches_to_show == 1:
+            ax = [ax] if label_dir else [[ax]]
+        elif not label_dir:
+            ax = [[a] for a in ax]
+
+        for i, index in enumerate(idx):
+            file = patch_dir[index]
+            print(file)
+
+            if file.endswith(".tif"):
+                img = rs.open(file).read()
+                img_display = img[band_num - 1 if band_num > 0 else -1]
+            else:
+                img = np.load(file)
+                img_display = img[:, :, band_num - 1 if band_num > 0 else -1]
+
+            ax[i][0].imshow(img_display)
+            ax[i][0].set_title("Image Patch")
+
+            if label_dir:
+                file_ = label_dir[index]
+                print(file_)
+                if file_.endswith(".tif"):
+                    lbl = rs.open(file_).read(1)
+                else:
+                    lbl = np.load(file_)
+                ax[i][1].imshow(lbl)
+                ax[i][1].set_title("Label Patch")
+
+            if show_bboxes and bbox_dir:
+                bbox_file = bbox_dir[index]
+                print(bbox_file)
+                with open(bbox_file, 'r') as f:
+                    bboxes = [list(map(float, line.strip().split())) for line in f]
+                for bbox in bboxes:
+                    class_id, x_c, y_c, w, h = map(float, bbox)
+                    x_min = (x_c - w / 2) * self.patch_size
+                    y_min = (y_c - h / 2) * self.patch_size
+                    w_px = w * self.patch_size
+                    h_px = h * self.patch_size
+                    rect = plt.Rectangle((x_min, y_min), w_px, h_px, edgecolor='red', facecolor='none', linewidth=2)
+                    ax[i][0].add_patch(rect)
+                    ax[i][0].text(x_min, y_min, f"Class {int(class_id)}", color='red', fontsize=8)
+
+        plt.tight_layout()
+        plt.show()
+
+class PredictionPatch(PatchBase):
+    """Generate patches for prediction from satellite imagery."""
     
     def save_Geotif(self, folder_name="tif"):
-        #self.patch_info()
-        
+        """Save prediction patches as GeoTIFF files.
 
+        Args:
+            folder_name: String, directory to save patches (subfolder: Prediction_patch).
         """
-        
-        parameters:
-        -----------
-        folder_name:        String
-                            Passing the folder name as string like "tif" so a folder 
-                            with that name will be generated in the current working directory 
-                            to save Geotif image patches there in the sub-folder called "Prediction_patch"
-        
+        self.readData()
+        total_patches, x_steps, y_steps = self.patch_info()
+        os.makedirs(f"{folder_name}/Prediction_patch", exist_ok=True)
 
-        """
-        
-        if not os.path.exists(folder_name+"/Prediction_patch"):
-                                  os.makedirs(folder_name+"/Prediction_patch")
-                          
-        with tqdm.tqdm(range(self.total_patches), desc="Patch Counter", unit=" Patch") as pbar:
-            index=1
-            patch_counter=0
-            for i in (range(0,self.x_dim,self.stride)):
-                for j in (range(0,self.x_dim,self.stride)):
-                    self.img_patch= self.imgarr[:,i:i+self.patch_size,j:j+self.patch_size]
-                    if self.img_patch.shape[1] or self.img_patch.shape[2]!= self.patch_size:
-                        temp=np.zeros((self.imgarr.shape[0], self.patch_size,self.patch_size), dtype='float')
-                        temp[:, :self.img_patch.shape[1],:self.img_patch.shape[2]]=self.img_patch
-                        self.img_patch=temp
-                    else:self.img_patch= self.imgarr[:,i:i+self.patch_size,j:j+self.patch_size]
-                        
-                        
-                    self.x_cord,self.y_cord = (j*self.img.transform[0]+self.img.transform[2]),(self.img.transform[5]+i*self.img.transform[4])
-                    transform= [self.img.transform[0],0,self.x_cord,0,self.img.transform[4],self.y_cord]
-                            
-                    with rs.open(folder_name+"/Prediction_patch/"+str(index)+"_img.tif","w",driver='GTiff', count=self.band, dtype=self.imgarr.dtype,
-                                          width=self.patch_size, height=self.patch_size, transform=transform, crs=self.img.crs) as raschip:
-                                raschip.write(self.img_patch)
-                                patch_counter+=1
-                
-                    index+=1
+        patch_counter = 0
+        index = 1
+        with tqdm.tqdm(total=total_patches, desc="Patch Counter", unit="Patch") as pbar:
+            for i in range(0, x_steps * self.stride, self.stride):
+                for j in range(0, y_steps * self.stride, self.stride):
+                    img_patch = self._extract_patch(i, j)
+
+                    x_cord = j * self.img.transform[0] + self.img.transform[2]
+                    y_cord = self.img.transform[5] + i * self.img.transform[4]
+                    transform = [self.img.transform[0], 0, x_cord, 0, self.img.transform[4], y_cord]
+
+                    with rs.open(
+                        f"{folder_name}/Prediction_patch/{index}_img.tif", "w", driver="GTiff",
+                        count=self.imgarr.shape[0], dtype=self.imgarr.dtype,
+                        width=self.patch_size, height=self.patch_size, transform=transform, crs=self.img.crs
+                    ) as raschip:
+                        raschip.write(img_patch)
+
+                    patch_counter += 1
+                    index += 1
                     pbar.update(1)
-            total_patches=pbar.total
-            save_patches=patch_counter
-            percentage= int((save_patches/total_patches)*100)
-            print("#######################################################################################")
-            print(f'{save_patches} patches, which are %{percentage} of totall patches, are saved as ".tif" format in "{os.getcwd()}\{folder_name}"')
-            print("#######################################################################################")
 
+        percentage = int((patch_counter / total_patches) * 100)
+        print(f"{patch_counter} patches ({percentage}% of total) saved as .tif in {os.getcwd()}\\{folder_name}")
 
-    
+    def save_numpy(self, folder_name="npy", return_stacked=True, save_stack=True):
+        """Save prediction patches as NumPy arrays.
 
+        Args:
+            folder_name: String, directory to save patches (subfolder: Prediction_patch).
+            return_stacked: Boolean, return stacked array if True.
+            save_stack: Boolean, save stacked array to disk if True.
+        """
+        self.readData()
+        total_patches, x_steps, y_steps = self.patch_info()
+        os.makedirs(f"{folder_name}/Prediction_patch", exist_ok=True)
 
+        patch_counter = 0
+        x = []
+        with tqdm.tqdm(total=total_patches, desc="Patch Counter", unit="Patch") as pbar:
+            index = 1
+            for i in range(0, x_steps * self.stride, self.stride):
+                for j in range(0, y_steps * self.stride, self.stride):
+                    img_patch = self._extract_patch(i, j)
+                    img_patch = np.transpose(img_patch, (1, 2, 0))  # Channel-last for saving
+                    np.save(f"{folder_name}/Prediction_patch/{index}_img.npy", img_patch)
+                    patch_counter += 1
+                    if return_stacked:
+                        x.append(img_patch)
+                    pbar.update(1)
+                    index += 1
 
+        percentage = int((patch_counter / total_patches) * 100)
+        print(f"{patch_counter} patches ({percentage}% of total) saved as .npy in {os.getcwd()}\\{folder_name}")
 
-
-
-
-
+        if return_stacked:
+            patch_stacked = np.array(x, dtype="float32")
+            if save_stack:
+                np.save(f"{folder_name}/Patch_stacked_{self.patch_size}.npy", patch_stacked)
+                print(f"Stacked patches saved with shape: {patch_stacked.shape}")
+            return patch_stacked
