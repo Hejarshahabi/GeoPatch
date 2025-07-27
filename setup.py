@@ -18,7 +18,7 @@ classifiers = [
 
 setup(
     name='GeoPatch',
-    version='1.2',
+    version='1.2.0',
     description='GeoPatch generates patches from remote sensing data for semantic segmentation and object detection with YOLO-format annotations',
     long_description=long_description,
     url='https://github.com/Hejarshahabi/GeoPatch',
