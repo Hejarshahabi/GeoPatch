@@ -1,13 +1,12 @@
-Change Log 
+Change Log
 ==========
-
 1.0 (04/07/2022)
 ----------------
 - First Release
 
 1.1 (03/08/2022)
 ----------------
-- Issues regarding loading Numpy arrays are fixed 
+- Issues regarding loading Numpy arrays are fixed
 - Issues Random visualization of sample are fixed
 
 1.1.1 (15/12/2022)
@@ -17,7 +16,11 @@ Change Log
 
 1.1.1 (22/11/2023)
 ----------------
-- in the previous version while generating prediction patches the edge pixels were missed, but now this issue is fixed
-  and the entire image is patched
-- in some cases user could not install GDAL, therefore GDAL library is added into
-  the packages to be installed automatically
+- Fixed edge pixel issue in prediction patch generation to ensure entire image is patched
+- Added GDAL to automatically installed packages
+
+1.2 (27/07/2025)
+----------------
+- Added generate_detection method to TrainPatch for object detection with YOLO-format bounding box annotations
+- Modified generate_segmentation and generate_detection to apply augmentations (V_flip, H_flip, Rotation)
+  only for format="npy", not for format="tif", to prevent shape mismatch errors

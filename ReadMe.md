@@ -1,131 +1,163 @@
+# GeoPatch
 
+## *GeoPatch* is a package for generating patches from remote sensing data [![PyPI version](https://img.shields.io/badge/PyPi%20Package-1.2-green)](https://pypi.org/project/GeoPatch/) [![Downloads](https://pepy.tech/badge/geopatch)](https://pepy.tech/project/geopatch) [![Github](https://img.shields.io/badge/Github-GeoPatch-blueviolet)](https://github.com/Hejarshahabi/GeoPatch) [![LinkedIn](https://img.shields.io/badge/LinkedIn-Hejar%20Shahabi-blue)](https://www.linkedin.com/in/hejarshahabi/) [![Twitter URL](https://img.shields.io/twitter/url?color=blue&label=Hejar%20Shahabi&style=social&url=https%3A%2F%2Ftwitter.com%2Fhejarshahabi)](https://twitter.com/hejarshahabi)
 
-## *GeoPatch* is a package for generating patches from remote sensing data [![PyPI version](https://img.shields.io/badge/PyPi%20Package-1.1.1-green)](https://pypi.org/project/GeoPatch/) [![Downloads](https://pepy.tech/badge/geopatch)](https://pepy.tech/project/geopatch) [![Github](https://img.shields.io/badge/Github-GeoPatch-blueviolet)](https://github.com/Hejarshahabi/GeoPatch) [![LinkedIn](https://img.shields.io/badge/LinkedIn-Hejar%20Shahabi-blue)](https://www.linkedin.com/in/hejarshahabi/) [![Twitter URL](https://img.shields.io/twitter/url?color=blue&label=Hejar%20Shahabi&style=social&url=https%3A%2F%2Ftwitter.com%2Fhejarshahabi)](https://twitter.com/hejarshahabi)
+*GeoPatch* enables users to read, process, and export GeoTIFFs in various patch sizes. Built on the Rasterio library, it simplifies reading and exporting GeoTIFF patches for training deep learning models. The package supports both semantic segmentation and object detection, generating patches in GeoTIFF or NumPy formats with optional YOLO-format bounding box annotations.
 
-  
-  
+Users can feed satellite imagery and corresponding label data to export patches, with support for data augmentation (vertical flip, horizontal flip, and 90/180/270-degree rotations) for NumPy output. The package ensures complete image coverage, including edge pixels, and supports visualization of patches.
 
-*GeoPatch* enables the user to read, process and export GeoTIFFs in various patch sizes. The module is built on the Rasterio library but is much more convenient when it comes to reading and exporting GeoTIFs patches for training deep learning models.
+Any feedback is welcome! Contact me at hejarshahabi@gmail.com for contributions or suggestions.
 
-Using this package user is able to feed satellite imagery and corresponding label data and exports patches in both Geotiff and Numpy array.
+<img src="https://github.com/Hejarshahabi/GeoPatch/blob/main/Patch_logo.jpg?raw=true" width="880" height="325">
 
-  
+## Quick Tutorial on How to Use GeoPatch
 
-Any feedback from users is welcome and you can write to me at hejarshahabi@gmail.com in case of any contribution or suggestion.
-
-  
-
-<img  src="https://github.com/Hejarshahabi/GeoPatch/blob/main/Patch_logo.jpg?raw=true?raw=true"  width="880"  height="325">
-
-  
-
-## Quick tutorial on how to use GeoPatch
-
-  
-
-### 1- Installation :
+### 1. Installation
 
 ```bash
-
 pip install GeoPatch
-
 ```
 
-### 2- Calling the Package:
+This automatically installs dependencies, including GDAL, for handling GeoTIFF files.
+
+### 2. Calling the Package
 
 ```bash
-
-from GeoPatch import TrainPatch
-
+from GeoPatch import TrainPatch, PredictionPatch
 ```
 
-### 3- Feeding data
+### 3. Feeding Data
 
-for image and label variables both string and array
-
-can be passed and the function automatically process and read dataset.
+For both `image` and `label` variables, you can pass either a string (file path to `.tif` or `.npy`) or a NumPy array. The package automatically processes and reads the dataset.
 
 ```bash
-
-patch= TrainPatch( image="xxx/image.tif", label="xxx/label.tif",
-
-patch_size=128, stride=64, channel_first=True)
-
+patch = TrainPatch(image="xxx/image.tif", label="xxx/label.tif", patch_size=128, stride=64, channel_first=True)
 ```
 
-### 4- Input data specifications
+### 4. Input Data Specifications
 
-Using follwoing code the the shape and size of data can be displayed
+Display the shape and size of the input data:
 
 ```bash
-
 patch.data_dimension()
-
 ```
 
-### 5- Patch details
+### 5. Patch Details
 
-To display the number of orginal image patches can be generated based on given patch size and stride values.
+Show the number of original image patches generated based on the given patch size and stride:
 
 ```bash
-
 patch.patch_info()
+```
+
+### 6. Saving Image Patches as GeoTIFF Files (Segmentation)
+
+Save image and label patches as GeoTIFF files in the specified `folder_name` under the current working directory. If `only_label=True`, only patches with non-zero labels are saved.
+
+```bash
+patch.generate_segmentation(format="tif", folder_name="seg_tif", only_label=True)
+```
+
+### 7. Saving Image Patches as NumPy Arrays (Segmentation)
+
+Generate image and label patches in NumPy format with optional data augmentation (vertical flip, horizontal flip, 90/180/270-degree rotations). Augmentations are applied only for `format="npy"`.
+
+```bash
+patch.generate_segmentation(
+    format="npy",
+    folder_name="seg_npy",
+    only_label=False,
+    return_stacked=False,
+    save_stack=False,
+    V_flip=True,
+    H_flip=True,
+    Rotation=True
+)
+
+# To return stacked NumPy patches:
+patch_stacked, label_stacked = patch.generate_segmentation(
+    format="npy",
+    folder_name="seg_npy",
+    only_label=False,
+    return_stacked=True,
+    save_stack=False,
+    V_flip=True,
+    H_flip=True,
+    Rotation=True
+)
+```
+
+### 8. Saving Patches for Object Detection (YOLO Format)
+
+Generate patches for object detection, producing image patches, optional segmentation masks, and YOLO-format bounding box annotations (`.txt` files). Augmentations are applied only for `format="npy"`.
+
+```bash
+patch.generate_detection(
+    format="npy",
+    folder_name="det_npy",
+    only_label=True,
+    return_stacked=False,
+    save_stack=False,
+    V_flip=True,
+    H_flip=True,
+    Rotation=True,
+    segmentation=True
+)
+```
+
+### 9. Patch Visualization
+
+Display patches with their corresponding labels or bounding boxes. Specify the exact `folder_name` where patches are saved. Use `show_bboxes=True` to overlay YOLO bounding boxes.
+
+```bash
+patch.visualize(
+    folder_name="seg_npy",
+    patches_to_show=2,
+    band_num=1,
+    fig_size=(10, 20),
+    dpi=96,
+    show_bboxes=False
+)
+```
+
+### 10. Generating Prediction Patches
+
+Generate patches for prediction using the `PredictionPatch` class:
+
+```bash
+prediction = PredictionPatch(image="xxx/test_image.tif", patch_size=128, stride=128, channel_first=True)
 
 ```
 
-### 6- Saving image patch as a Geotiff file
+### 11. Saving Prediction Patches
 
-To save image patches as Geotiff files in the current working directory with the given "folder_name", and if "only_label" pass as True, only patches will be save that has labelled data.
+Save prediction patches as GeoTIFF or NumPy arrays. Edge pixels are included to ensure complete image coverage.
 
 ```bash
+# Save as GeoTIFF
+prediction.save_Geotif(folder_name="pred_tif")
 
-patch.save_Geotif(folder_name="tif", only_label=True)
-
+# Save as NumPy arrays
+prediction.save_numpy(folder_name="pred_npy")
 ```
 
-### 7- Saving image patch as a Numpy array
+## Change Log
 
-Using this function image patches will be generated in Numpy format with data augmentation options. V_flip and H_flip are used to vertically and horizontally flip patches, respectively, and rotation is used to rotate patches in 90,180 and 270 degree.
+### 1.0 (04/07/2022)
+- First Release
 
-```bash
+### 1.1 (03/08/2022)
+- Fixed issues with loading NumPy arrays
+- Fixed random visualization of samples
 
-patch.save_numpy(folder_name="npy", only_label=False, return_stacked=False, save_stack=False, V_flip=True, H_flip=True, Rotation=True)
+### 1.1.1 (15/12/2022)
+- Fixed visualization issues in Linux environments
+- Added `PredictionPatch` class for generating prediction patches
 
-#to return numpy patches as a stack file:
+### 1.1.1 (22/11/2023)
+- Fixed edge pixel issue in prediction patch generation to ensure entire image is patched
+- Added GDAL to automatically installed packages
 
-patch, label= patch.save_numpy(folder_name="npy", only_label=False, return_stacked=True, save_stack=False, V_flip=True, H_flip=True, Rotation=True)
-
-```
-
-### 8- Patch visualization
-
-Patches with their corresponding labels can be displayed using this line of code.
-
-In "*folder_name*" the exact name of the folder that patches are located in should be passed.
-
-```bash
-
-patch.visualize(folder_name='npy',patches_to_show=2,band_num=1,
-
-fig_size=(10, 20),dpi=96)
-
-```
-### 9- Generating Prediction Patch 
-
-Using the following line of codes prediction patches can be generated.
-
-
-```bash
-
-from GeoPatch import PredictionPatch
-Prediction= PredictionPatch( image="xxx/test_image.tif", patch_size=128, stride=128, channel_first=True)
-Prediction.data_dimension()
-Prediction.patch_info()
-```
-### 10- Saving Prediction Patches
-
-Using the following line of code prediction patches can be saved as GeoTIF format in the provided folder. 
-
-
-```bash
-Prediction.save_Geotif('folder_name')
+### 1.2 (27/07/2025)
+- Added `generate_detection` method to `TrainPatch` for object detection with YOLO-format bounding box annotations
+- Modified `generate_segmentation` and `generate_detection` to apply augmentations (V_flip, H_flip, Rotation) only for `format="npy"`, not for `format="tif"`, to prevent shape mismatch errors
