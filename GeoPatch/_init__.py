@@ -1,24 +1,30 @@
+
 # -*- coding: utf-8 -*-
 """
 Created on Dec 15, 2022
-Updated on Jul 27, 2025
+Updated on Jul 28, 2025
 
 @author: Hejar Shahabi
 @email: hejarshahabi@gmail.com
 
 Optimized patch generation for satellite imagery with support for semantic segmentation,
 object detection, or both. Outputs GeoTIFF or NumPy patches with segmentation masks
-and/or YOLO-format bounding box annotations.
+and/or YOLO-format bounding box annotations. Includes support for generating labels from shapefiles.
 """
 
 import numpy as np
 import rasterio as rs
+import geopandas as gpd
 import glob
 import os
 import math
 import tqdm
 import matplotlib.pyplot as plt
 from pathlib import Path
+from rasterio import features
+from shapely.geometry import box
+from rasterio.crs import CRS
+from rasterio.warp import transform_bounds
 from skimage.measure import label as skimage_label, regionprops
 
 class PatchBase:
@@ -117,7 +123,7 @@ class TrainPatch(PatchBase):
 
         Args:
             image: NumPy array or string path to satellite imagery (.tif or .npy).
-            label: NumPy array or string path to label raster (.tif or .npy).
+            label: NumPy array or string path to label raster (.tif or .npy) or shapefile (.shp).
             patch_size: Integer, size of square patches.
             stride: Integer, step size for sliding window.
             channel_first: Boolean, True if channels are first dimension.
@@ -125,7 +131,7 @@ class TrainPatch(PatchBase):
         super().__init__(image, patch_size, stride, channel_first)
         if label is None:
             raise ValueError("Label must be provided for training.")
-        self.label_data = label  # Renamed to avoid shadowing 'label' function
+        self.label_data = label
         self.inv = None
 
     def readData(self):
@@ -145,12 +151,14 @@ class TrainPatch(PatchBase):
                 if not os.path.exists(self.label_data):
                     raise FileNotFoundError(f"Label file {self.label_data} not found.")
                 self.inv = np.load(self.label_data)
+            elif self.label_data.endswith(".shp"):
+                self.inv = None  # Shapefile processing deferred to generate_from_shapefile
             else:
-                raise ValueError("Label file must be .tif or .npy.")
+                raise ValueError("Label file must be .tif, .npy, or .shp.")
         else:
             self.inv = self.label_data
 
-        if self.imgarr.shape[1:] != self.inv.shape:
+        if self.inv is not None and self.imgarr.shape[1:] != self.inv.shape:
             raise ValueError(f"Image {self.imgarr.shape[1:]} and label {self.inv.shape} dimensions must match.")
         
         return self.imgarr, self.inv
@@ -160,18 +168,21 @@ class TrainPatch(PatchBase):
         self.readData()
         print("############################################")
         print(f"The shape of image is: {self.shape}")
-        print(f"The shape of label is: {self.inv.shape}")
+        if self.inv is not None:
+            print(f"The shape of label is: {self.inv.shape}")
         print("############################################")
 
     def _extract_patch(self, i, j):
         """Extract a single patch from image and label."""
         img_patch = super()._extract_patch(i, j)
-        lbl_patch = self.inv[i:i+self.patch_size, j:j+self.patch_size]
-        if lbl_patch.shape[0] != self.patch_size or lbl_patch.shape[1] != self.patch_size:
-            temp = np.zeros((self.patch_size, self.patch_size), dtype=self.inv.dtype)
-            temp[:lbl_patch.shape[0], :lbl_patch.shape[1]] = lbl_patch
-            lbl_patch = temp
-        return img_patch, lbl_patch
+        if self.inv is not None:
+            lbl_patch = self.inv[i:i+self.patch_size, j:j+self.patch_size]
+            if lbl_patch.shape[0] != self.patch_size or lbl_patch.shape[1] != self.patch_size:
+                temp = np.zeros((self.patch_size, self.patch_size), dtype=self.inv.dtype)
+                temp[:lbl_patch.shape[0], :lbl_patch.shape[1]] = lbl_patch
+                lbl_patch = temp
+            return img_patch, lbl_patch
+        return img_patch, None
 
     def _generate_bounding_boxes(self, lbl_patch):
         """Generate YOLO-format bounding box annotations from label patch.
@@ -183,9 +194,9 @@ class TrainPatch(PatchBase):
             List of tuples (class_id, x_center, y_center, width, height) normalized to [0,1].
         """
         bboxes = []
-        labeled = skimage_label(lbl_patch > 0)  # Use explicit skimage_label to avoid shadowing
+        labeled = skimage_label(lbl_patch > 0)
         for region in regionprops(labeled, intensity_image=lbl_patch):
-            class_id = int(np.max(lbl_patch[region.coords[:, 0], region.coords[:, 1]])) - 1  # YOLO classes are 0-based
+            class_id = int(np.max(lbl_patch[region.coords[:, 0], region.coords[:, 1]])) - 1
             if class_id < 0:
                 continue
             min_row, min_col, max_row, max_col = region.bbox
@@ -293,7 +304,6 @@ class TrainPatch(PatchBase):
         os.makedirs(f"{folder_name}/patch", exist_ok=True)
         os.makedirs(f"{folder_name}/label", exist_ok=True)
 
-        # Define augmentations only for NumPy output
         augmentations = [0]
         if format == "npy" and V_flip:
             augmentations.append("V")
@@ -318,9 +328,7 @@ class TrainPatch(PatchBase):
                     if only_label and not lbl_patch.any():
                         continue
 
-                    # Convert to channel-last for augmentation and NumPy saving
-                    img_patch_save = np.transpose(img_patch, (1, 2, 0))  # (height, width, channels)
-
+                    img_patch_save = np.transpose(img_patch, (1, 2, 0))
                     if format == "tif":
                         x_cord = j * self.img.transform[0] + self.img.transform[2]
                         y_cord = self.img.transform[5] + i * self.img.transform[4]
@@ -330,7 +338,7 @@ class TrainPatch(PatchBase):
                             count=self.imgarr.shape[0], dtype=self.imgarr.dtype,
                             width=self.patch_size, height=self.patch_size, transform=transform, crs=self.img.crs
                         ) as raschip:
-                            raschip.write(np.transpose(img_patch_save, (2, 0, 1)))  # Back to channel-first
+                            raschip.write(np.transpose(img_patch_save, (2, 0, 1)))
                         with rs.open(
                             f"{folder_name}/label/{index}_lbl.tif", "w", driver="GTiff",
                             count=1, dtype=self.inv.dtype, width=self.patch_size, height=self.patch_size,
@@ -346,7 +354,6 @@ class TrainPatch(PatchBase):
                         y.append(lbl_patch)
                     pbar.update(1)
 
-                    # Apply augmentations only for NumPy output
                     if format == "npy":
                         for aug in augmentations[1:]:
                             aug_img, aug_lbl = self._apply_segmentation_augmentation(img_patch_save, lbl_patch, aug)
@@ -394,7 +401,6 @@ class TrainPatch(PatchBase):
         if segmentation:
             os.makedirs(f"{folder_name}/label", exist_ok=True)
 
-        # Define augmentations only for NumPy output
         augmentations = [0]
         if format == "npy" and V_flip:
             augmentations.append("V")
@@ -419,7 +425,7 @@ class TrainPatch(PatchBase):
                     if only_label and not lbl_patch.any():
                         continue
 
-                    img_patch_save = np.transpose(img_patch, (1, 2, 0))  # Channel-last for augmentation
+                    img_patch_save = np.transpose(img_patch, (1, 2, 0))
                     bboxes = self._generate_bounding_boxes(lbl_patch)
                     if format == "tif":
                         x_cord = j * self.img.transform[0] + self.img.transform[2]
@@ -442,6 +448,166 @@ class TrainPatch(PatchBase):
                         np.save(f"{folder_name}/patch/{index}_img.npy", img_patch_save)
                         if segmentation:
                             np.save(f"{folder_name}/label/{index}_lbl.npy", lbl_patch)
+                    self._save_bounding_boxes(boxes, f"{folder_name}/bbox/{index}_bbox.txt")
+                    patch_counter += 1
+                    if return_stacked:
+                        x.append(img_patch_save)
+                        if segmentation:
+                            y.append(lbl_patch)
+                    pbar.update(1)
+
+                    if format == "npy":
+                        for aug in augmentations[1:]:
+                            aug_img, aug_lbl, aug_bboxes = self._apply_detection_augmentation(img_patch_save, lbl_patch, aug)
+                            np.save(f"{folder_name}/patch/{index}_img_{aug}.npy", aug_img)
+                            if segmentation:
+                                np.save(f"{folder_name}/label/{index}_lbl_{aug}.npy", aug_lbl)
+                            self._save_bounding_boxes(aug_bboxes, f"{folder_name}/bbox/{index}_bbox_{aug}.txt")
+                            patch_counter += 1
+                            if return_stacked:
+                                x.append(aug_img)
+                                if segmentation:
+                                    y.append(aug_lbl)
+                            pbar.update(1)
+                    index += 1
+
+        percentage = int((patch_counter / (total_patches * len(augmentations))) * 100)
+        print(f"{patch_counter} patches ({percentage}% of total) saved as .{format} in {os.getcwd()}\\{folder_name}")
+
+        if return_stacked:
+            patch_stacked = np.array(x, dtype="float32")
+            label_stacked = np.array(y, dtype="int") if segmentation and y else None
+            if save_stack:
+                np.save(f"{folder_name}/Patch_stacked_{self.patch_size}.npy", patch_stacked)
+                if segmentation and label_stacked is not None:
+                    np.save(f"{folder_name}/label_stacked_{self.patch_size}.npy", label_stacked)
+                    print(f"Stacked patches and labels saved with shapes: {patch_stacked.shape, label_stacked.shape}")
+                else:
+                    print(f"Stacked patches saved with shape: {patch_stacked.shape}")
+            return patch_stacked, label_stacked if segmentation else patch_stacked
+
+    def generate_from_shapefile(self, label_field, format="npy", folder_name="shp_data", 
+                               only_label=True, return_stacked=True, save_stack=True, 
+                               V_flip=True, H_flip=True, Rotation=True, segmentation=True):
+        """Generate patches for segmentation and/or object detection using a polygon shapefile.
+
+        Args:
+            label_field: String, name of the field in the shapefile containing label values.
+            format: String, output format ("tif" for GeoTIFF, "npy" for NumPy).
+            folder_name: String, directory to save patches (subfolders: patch, bbox, label if segmentation).
+            only_label: Boolean, save only patches with non-zero labels if True.
+            return_stacked: Boolean, return stacked arrays if True.
+            save_stack: Boolean, save stacked arrays to disk if True.
+            V_flip: Boolean, apply vertical flip augmentation (only for NumPy output).
+            H_flip: Boolean, apply horizontal flip augmentation (only for NumPy output).
+            Rotation: Boolean, apply 90/180/270-degree rotation augmentation (only for NumPy output).
+            segmentation: Boolean, generate segmentation masks if True.
+        """
+        self.readData()
+        if not isinstance(self.label_data, str) or not self.label_data.endswith(".shp"):
+            raise ValueError("Label must be a shapefile (.shp) for generate_from_shapefile.")
+        
+        total_patches, x_steps, y_steps = self.patch_info()
+        
+        # Read shapefile and reproject to WGS84 (EPSG:4326)
+        if not os.path.exists(self.label_data):
+            raise FileNotFoundError(f"Shapefile {self.label_data} not found.")
+        gdf = gpd.read_file(self.label_data)
+        if not gdf.crs:
+            raise ValueError("Shapefile must have a defined CRS.")
+        if label_field not in gdf.columns:
+            raise ValueError(f"Label field '{label_field}' not found in shapefile.")
+        
+        # Reproject shapefile to WGS84
+        wgs84_crs = CRS.from_epsg(4326)
+        gdf = gdf.to_crs(wgs84_crs)
+        
+        # Get raster bounds and transform to WGS84
+        if not self.img.crs:
+            raise ValueError("Image must have a defined CRS.")
+        src_bounds = self.img.bounds
+        dst_bounds = transform_bounds(self.img.crs, wgs84_crs, *src_bounds)
+        raster_extent = box(dst_bounds[0], dst_bounds[1], dst_bounds[2], dst_bounds[3])
+        
+        # Clip polygons to raster extent in WGS84
+        gdf_clipped = gdf[gdf.geometry.intersects(raster_extent)].copy()
+        if gdf_clipped.empty:
+            raise ValueError("No polygons intersect with the raster extent in WGS84.")
+        
+        # Reproject image transform to WGS84
+        # Calculate new transform for WGS84-aligned raster
+        transform = from_bounds(dst_bounds[0], dst_bounds[1], dst_bounds[2], dst_bounds[3], 
+                               self.img.width, self.img.height)
+        
+        # Rasterize the clipped shapefile in WGS84
+        label_array = np.zeros((self.img.height, self.img.width), dtype=np.int32)
+        shapes = [(geom, int(value)) for geom, value in zip(gdf_clipped.geometry, gdf_clipped[label_field])]
+        if shapes:
+            label_array = features.rasterize(
+                shapes,
+                out_shape=(self.img.height, self.img.width),
+                transform=transform,
+                fill=0,
+                dtype=np.int32
+            )
+        
+        # Set label array for patch extraction
+        self.inv = label_array
+        
+        # Create output directories
+        os.makedirs(f"{folder_name}/patch", exist_ok=True)
+        os.makedirs(f"{folder_name}/bbox", exist_ok=True)
+        if segmentation:
+            os.makedirs(f"{folder_name}/label", exist_ok=True)
+
+        # Define augmentations only for NumPy output
+        augmentations = [0]
+        if format == "npy" and V_flip:
+            augmentations.append("V")
+        if format == "npy" and H_flip:
+            augmentations.append("H")
+        if format == "npy" and Rotation:
+            augmentations.extend(["90", "180", "270"])
+
+        patch_counter = 0
+        x, y = [], []
+        valid_patches = total_patches if not only_label else sum(
+            1 for i in range(0, x_steps * self.stride, self.stride)
+            for j in range(0, y_steps * self.stride, self.stride)
+            if label_array[i:i+self.patch_size, j:j+self.patch_size].any()
+        )
+
+        with tqdm.tqdm(total=valid_patches * len(augmentations), desc="Patch Counter", unit="Patch") as pbar:
+            index = 1
+            for i in range(0, x_steps * self.stride, self.stride):
+                for j in range(0, y_steps * self.stride, self.stride):
+                    img_patch, lbl_patch = self._extract_patch(i, j)
+                    if only_label and not lbl_patch.any():
+                        continue
+
+                    img_patch_save = np.transpose(img_patch, (1, 2, 0))
+                    bboxes = self._generate_bounding_boxes(lbl_patch)
+                    if format == "tif":
+                        x_cord = j * transform[0] + transform[2]
+                        y_cord = transform[5] + i * transform[4]
+                        patch_transform = [transform[0], 0, x_cord, 0, transform[4], y_cord]
+                        with rs.open(
+                            f"{folder_name}/patch/{index}_img.tif", "w", driver="GTiff",
+                            count=self.imgarr.shape[0], dtype=self.imgarr.dtype,
+                            width=self.patch_size, height=self.patch_size, transform=patch_transform, crs=wgs84_crs
+                        ) as raschip:
+                            raschip.write(np.transpose(img_patch_save, (2, 0, 1)))
+                        if segmentation:
+                            with rs.open(
+                                f"{folder_name}/label/{index}_lbl.tif", "w", driver="GTiff",
+                                count=1, dtype=label_array.dtype, width=self.patch_size, height=self.patch_size,
+                                transform=patch_transform, crs=wgs84_crs
+                            ) as lblchip:
+                                lblchip.write(lbl_patch, 1)
+                    else:
+                        np.save(f"{folder_name}/patch/{index}_img.npy", img_patch_save)
+                        if segmentation:
+                            np.save(f"{folder_name}/label/{index}_lbl.npy", lbl_patch)
                     self._save_bounding_boxes(bboxes, f"{folder_name}/bbox/{index}_bbox.txt")
                     patch_counter += 1
                     if return_stacked:
@@ -450,7 +616,6 @@ class TrainPatch(PatchBase):
                             y.append(lbl_patch)
                     pbar.update(1)
 
-                    # Apply augmentations only for NumPy output
                     if format == "npy":
                         for aug in augmentations[1:]:
                             aug_img, aug_lbl, aug_bboxes = self._apply_detection_augmentation(img_patch_save, lbl_patch, aug)
@@ -611,7 +776,7 @@ class PredictionPatch(PatchBase):
             for i in range(0, x_steps * self.stride, self.stride):
                 for j in range(0, y_steps * self.stride, self.stride):
                     img_patch = self._extract_patch(i, j)
-                    img_patch = np.transpose(img_patch, (1, 2, 0))  # Channel-last for saving
+                    img_patch = np.transpose(img_patch, (1, 2, 0))
                     np.save(f"{folder_name}/Prediction_patch/{index}_img.npy", img_patch)
                     patch_counter += 1
                     if return_stacked:

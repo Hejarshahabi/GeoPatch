@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-with open("ReadMe.md", "r", encoding="utf-8") as ReadMe:
+with open("README.md", "r", encoding="utf-8") as ReadMe:
     long_description = ReadMe.read()
 
 classifiers = [
@@ -18,17 +18,26 @@ classifiers = [
 
 setup(
     name='GeoPatch',
-    version='1.2.0',
-    description='GeoPatch generates patches from remote sensing data for semantic segmentation and object detection with YOLO-format annotations',
+    version='1.3.0',
+    description='GeoPatch generates patches from remote sensing data and shapefiles for semantic segmentation and object detection with YOLO-format annotations',
     long_description=long_description,
     url='https://github.com/Hejarshahabi/GeoPatch',
     author='Hejar Shahabi',
     author_email='hejarshahabi@gmail.com',
     license='MIT',
     classifiers=classifiers,
-    keywords='Machine Learning, Remote Sensing, Deep Learning, Object Detection, YOLO',
+    keywords='Machine Learning, Remote Sensing, Deep Learning, Object Detection, YOLO, Shapefile',
     long_description_content_type='text/markdown',
     packages=find_packages(),
-    data_files=[('', ['GDAL-3.6.2-cp38-cp38-win_amd64.whl'])],
-    install_requires=['numpy', 'pandas', 'matplotlib', 'scikit-learn', 'rasterio', 'tqdm', 'scikit-image']
+    install_requires=[
+        'numpy',
+        'pandas',
+        'matplotlib',
+        'scikit-learn',
+        'rasterio',
+        'geopandas',
+        'shapely',
+        'tqdm',
+        'scikit-image'
+    ]
 )
