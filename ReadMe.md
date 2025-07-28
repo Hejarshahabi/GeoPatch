@@ -1,6 +1,6 @@
 # GeoPatch
 
-## *GeoPatch* is a package for generating patches from remote sensing data [![PyPI version](https://img.shields.io/badge/PyPi%20Package-1.3-green)](https://pypi.org/project/GeoPatch/) [![Downloads](https://pepy.tech/badge/geopatch)](https://pepy.tech/project/geopatch) [![Github](https://img.shields.io/badge/Github-GeoPatch-blueviolet)](https://github.com/Hejarshahabi/GeoPatch) [![LinkedIn](https://img.shields.io/badge/LinkedIn-Hejar%20Shahabi-blue)](https://www.linkedin.com/in/hejarshahabi/) [![Twitter URL](https://img.shields.io/twitter/url?color=blue&label=Hejar%20Shahabi&style=social&url=https%3A%2F%2Ftwitter.com%2Fhejarshahabi)](https://twitter.com/hejarshahabi)
+## *GeoPatch* is a package for generating patches from remote sensing data [![PyPI version](https://img.shields.io/badge/PyPi%20Package-1.3.2-green)](https://pypi.org/project/GeoPatch/) [![Downloads](https://pepy.tech/badge/geopatch)](https://pepy.tech/project/geopatch) [![Github](https://img.shields.io/badge/Github-GeoPatch-blueviolet)](https://github.com/Hejarshahabi/GeoPatch) [![LinkedIn](https://img.shields.io/badge/LinkedIn-Hejar%20Shahabi-blue)](https://www.linkedin.com/in/hejarshahabi/) [![Twitter URL](https://img.shields.io/twitter/url?color=blue&label=Hejar%20Shahabi&style=social&url=https%3A%2F%2Ftwitter.com%2Fhejarshahabi)](https://twitter.com/hejarshahabi)
 
 *GeoPatch* enables users to read, process, and export GeoTIFF patches for training deep learning models. Built on the Rasterio library, it simplifies reading and exporting GeoTIFF patches for semantic segmentation and object detection. The package supports generating patches from raster labels or polygon shapefiles, producing outputs in GeoTIFF or NumPy formats with optional YOLO-format bounding box annotations.
 
@@ -32,10 +32,10 @@ For the `image` variable, you can pass either a string (file path to `.tif` or `
 
 ```bash
 # For segmentation or detection with raster labels
-patch = TrainPatch(image="xxx/image.tif", label="xxx/label.tif", patch_size=128, stride=64, channel_first=True)
+patch = TrainPatch(image="xxx/image.tif", label="xxx/label.tif", patch_size=128, stride=64, channel_first=True, shapefile_path=None, label_field=None)
 
 # For segmentation or detection with shapefile labels
-patch = TrainPatch(image="xxx/image.tif", label="xxx/labels.shp", patch_size=128, stride=64, channel_first=True)
+patch = TrainPatch(image="xxx/image.tif", label=None, patch_size=128, stride=64, channel_first=True, shapefile_path="xxx/labels.shp", label_field="class_id")
 ```
 
 ### 4. Input Data Specifications
@@ -111,11 +111,33 @@ patch.generate_detection(
 
 ### 9. Saving Patches from Shapefiles (Segmentation and/or Object Detection)
 
-Generate patches for segmentation and/or object detection using a polygon shapefile. The shapefile is reprojected to WGS84 (EPSG:4326) to ensure alignment with the image. Specify the `label_field` containing integer class IDs (e.g., `class_id`). Outputs include image patches, optional segmentation masks, and YOLO-format bounding box annotations. Augmentations are applied only for `format="npy"`.
+Generate patches for segmentation and/or object detection using a polygon shapefile. The shapefile is reprojected to WGS84 (EPSG:4326) before clipping and rasterization to ensure alignment with the image. Specify the `label_field` containing integer class IDs (e.g., `class_id`) during `TrainPatch` initialization. Outputs include image patches, optional segmentation masks, and YOLO-format bounding box annotations. Augmentations are applied only for `format="npy"`.
 
 ```bash
-patch.generate_from_shapefile(
-    label_field="class_id",
+patch = TrainPatch(
+    image="xxx/image.tif",
+    label=None,
+    patch_size=128,
+    stride=64,
+    channel_first=True,
+    shapefile_path="xxx/labels.shp",
+    label_field="class_id"
+)
+
+# For segmentation
+patch.generate_segmentation(
+    format="npy",
+    folder_name="shp_npy",
+    only_label=True,
+    return_stacked=True,
+    save_stack=True,
+    V_flip=True,
+    H_flip=True,
+    Rotation=True
+)
+
+# For detection
+patch.generate_detection(
     format="npy",
     folder_name="shp_npy",
     only_label=True,
@@ -185,7 +207,15 @@ prediction.save_numpy(folder_name="pred_npy")
 - Modified `generate_segmentation` and `generate_detection` to apply augmentations (V_flip, H_flip, Rotation) only for `format="npy"`, not for `format="tif"`, to prevent shape mismatch errors
 
 ### 1.3 (28/07/2025)
-- Added `generate_from_shapefile` method to `TrainPatch` for generating patches from polygon shapefiles, supporting segmentation and/or object detection
-- Updated `generate_from_shapefile` to reproject shapefiles to WGS84 (EPSG:4326) before clipping and rasterization to prevent label mismatches due to CRS issues
-- Removed redundant `shapefile_path` parameter in `generate_from_shapefile`, using `label` from `TrainPatch` initialization
+- Added support for generating patches from polygon shapefiles in `TrainPatch`, enabling segmentation and/or object detection
+- Updated shapefile processing to reproject to WGS84 (EPSG:4326) before clipping and rasterization to prevent label mismatches due to CRS issues
+- Removed redundant `shapefile_path` parameter in `generate_from_shapefile`, using `label` and `label_field` from `TrainPatch` initialization
 - Added dependencies (`geopandas`, `shapely`, `scikit-image`) to support shapefile processing and bounding box generation
+
+### 1.3.1 (28/07/2025)
+- minor bugs resolved
+
+### 1.3.2 (28/07/2025)
+- Removed verbose print statements in `preprocess_and_rasterize` function to streamline output and improve user experience
+- Updated `TrainPatch` initialization to explicitly handle `shapefile_path` and `label_field` parameters for clarity
+- Improved documentation to reflect updated `TrainPatch` usage with shapefile inputs

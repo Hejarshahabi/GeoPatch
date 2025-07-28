@@ -1,33 +1,34 @@
 Change Log
 ==========
 1.0 (04/07/2022)
-----------------
 - First Release
 
 1.1 (03/08/2022)
-----------------
-- Issues regarding loading Numpy arrays are fixed
-- Issues Random visualization of sample are fixed
+- Fixed issues with loading NumPy arrays
+- Fixed random visualization of samples
 
 1.1.1 (15/12/2022)
-----------------
-- Issues regarding visualization fixed in Linux environments
-- A function for generating a Prediction patch is added
+- Fixed visualization issues in Linux environments
+- Added `PredictionPatch` class for generating prediction patches
 
 1.1.1 (22/11/2023)
-----------------
 - Fixed edge pixel issue in prediction patch generation to ensure entire image is patched
 - Added GDAL to automatically installed packages
 
 1.2 (27/07/2025)
-----------------
-- Added generate_detection method to TrainPatch for object detection with YOLO-format bounding box annotations
-- Modified generate_segmentation and generate_detection to apply augmentations (V_flip, H_flip, Rotation)
-  only for format="npy", not for format="tif", to prevent shape mismatch errors
+- Added `generate_detection` method to `TrainPatch` for object detection with YOLO-format bounding box annotations
+- Modified `generate_segmentation` and `generate_detection` to apply augmentations (V_flip, H_flip, Rotation) only for `format="npy"`, not for `format="tif"`, to prevent shape mismatch errors
 
 1.3 (28/07/2025)
-----------------
-- Added `generate_from_shapefile` method to `TrainPatch` for generating patches from polygon shapefiles, supporting segmentation and/or object detection
-- Updated `generate_from_shapefile` to reproject shapefiles to WGS84 (EPSG:4326) before clipping and rasterization to prevent label mismatches due to CRS issues
-- Removed redundant `shapefile_path` parameter in `generate_from_shapefile`, using `label` from `TrainPatch` initialization
+- Added support for generating patches from polygon shapefiles in `TrainPatch`, enabling segmentation and/or object detection
+- Updated shapefile processing to reproject to WGS84 (EPSG:4326) before clipping and rasterization to prevent label mismatches due to CRS issues
+- Removed redundant `shapefile_path` parameter in `generate_from_shapefile`, using `label` and `label_field` from `TrainPatch` initialization
 - Added dependencies (`geopandas`, `shapely`, `scikit-image`) to support shapefile processing and bounding box generation
+
+1.3.1 (28/07/2025)
+- minor bugs resolved
+
+1.3.2 (28/07/2025)
+- Removed verbose print statements in `preprocess_and_rasterize` function to streamline output and improve user experience
+- Updated `TrainPatch` initialization to explicitly handle `shapefile_path` and `label_field` parameters for clarity
+- Improved documentation to reflect updated `TrainPatch` usage with shapefile inputs
