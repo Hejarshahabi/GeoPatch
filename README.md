@@ -47,6 +47,46 @@ patch_generator = TrainPatch(
 )
 ```
 
+#### Using Polygon Vector Data (Shapefiles / GeoJSON) as Labels
+`GeoPatch` requires labels to be in a raster format (`.tif` or `.npy`). If your ground-truth labels are vector polygons (e.g., a `.shp` or `.geojson` file), you must rasterize them into a GeoTIFF mask before passing them to `GeoPatch`. 
+
+Here is how you can easily convert your polygons to a raster mask using `geopandas` and `rasterio`:
+
+```python
+import geopandas as gpd
+import rasterio
+from rasterio.features import rasterize
+
+# 1. Load the reference satellite image and the polygon shapefile
+with rasterio.open("path/to/your/satellite_image.tif") as src:
+    meta = src.meta.copy()
+    transform = src.transform
+    shape = (src.height, src.width)
+
+gdf = gpd.read_file("path/to/your/polygons.shp")
+
+# 2. Extract geometries and values (e.g., class IDs from a column like 'class_id')
+# If you don't have a class column, you can use a default value (e.g., 1)
+shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf['class_id']))
+
+# 3. Rasterize the polygons into a mask array
+mask = rasterize(
+    shapes=shapes,
+    out_shape=shape,
+    transform=transform,
+    fill=0,          # Background value
+    all_touched=True,
+    dtype=rasterio.uint8
+)
+
+# 4. Save the rasterized mask as a GeoTIFF
+meta.update(count=1, dtype=rasterio.uint8)
+with rasterio.open("path/to/your/label_raster.tif", 'w', **meta) as dst:
+    dst.write(mask, 1)
+
+# Now you can pass "path/to/your/label_raster.tif" to TrainPatch!
+```
+
 #### Semantic Segmentation Datasets
 To generate image patches and their corresponding label masks:
 
