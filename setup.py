@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-with open("ReadMe.md", "r", encoding="utf-8") as ReadMe:
+with open("README.md", "r", encoding="utf-8") as ReadMe:
     long_description = ReadMe.read()
 
 classifiers = [
@@ -13,7 +13,7 @@ classifiers = [
 
 setup(
     name='GeoPatch',
-    version='1.2.3',
+    version='1.2.4',
     description='GeoPatch is a package for generating patches from remote sensing data',
     long_description=long_description,
     url='https://github.com/Hejarshahabi',
