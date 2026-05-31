@@ -5,7 +5,7 @@
 ![GeoPatch Logo](https://raw.githubusercontent.com/Hejarshahabi/GeoPatch/main/Patch_logo.jpg)
 **GeoPatch** is a high-performance Python package designed for generating patches from remote sensing satellite imagery. It simplifies the preprocessing pipeline for deep learning tasks by automatically handling large rasters, clipping them into patches, and exporting them alongside corresponding labels for **Semantic Segmentation** and **Object Detection (YOLO format)**.
 
-GeoPatch is built on top of **[TerraTiff](https://github.com/Hejarshahabi/TerraTiff)** for lightweight, lightning-fast raster operations without the heavy GDAL dependencies.
+**GeoPatch** is built on top of **[TerraTiff](https://github.com/Hejarshahabi/TerraTiff)** for lightweight, lightning-fast raster operations without the heavy GDAL dependencies.
 ---
 
 ## 🛠️ Installation
