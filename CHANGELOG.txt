@@ -1,23 +1,17 @@
-Change Log 
-==========
+Version 1.2.8
+- Fixed bold formatting for GeoPatch and TerraTiff in README.md.
 
-1.0 (04/07/2022)
-----------------
-- First Release
+Version 1.2.7
+- Updated project description to highlight TerraTiff over heavy GDAL/rasterio dependencies.
 
-1.1 (03/08/2022)
-----------------
-- Issues regarding loading Numpy arrays are fixed 
-- Issues Random visualization of sample are fixed
+Version 1.2.6
+- Improved README.md layout by moving dynamic badges to the top.
 
-1.1.1 (15/12/2022)
-----------------
-- Issues regarding visualization fixed in Linux environments
-- A function for generating a Prediction patch is added
+Version 1.2.5
+- Fixed logo absolute URL rendering issue for PyPI compatibility.
 
-1.1.1 (22/11/2023)
-----------------
-- in the previous version while generating prediction patches the edge pixels were missed, but now this issue is fixed
-  and the entire image is patched
-- in some cases user could not install GDAL, therefore GDAL library is added into
-  the packages to be installed automatically
+Version 1.2.4
+- Completely removed hard GDAL and rasterio dependencies from the core package logic.
+- Fully integrated `TerraTiff` for lightweight, lightning-fast raster patch extraction.
+- Added comprehensive tutorial to README on handling vector polygon labels (Shapefiles/GeoJSON) using geopandas.
+- Cleaned up repository structure to follow a flat Python package layout.
