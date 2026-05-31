@@ -13,7 +13,7 @@ classifiers = [
 
 setup(
     name='GeoPatch',
-    version='1.2.5',
+    version='1.2.6',
     description='GeoPatch is a package for generating patches from remote sensing data',
     long_description=long_description,
     url='https://github.com/Hejarshahabi',
